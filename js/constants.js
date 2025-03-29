@@ -16,7 +16,7 @@ export async function loadRadioMeta() {
             const remoteResponse = await fetch(remoteDataPath + "radio.json")
             if (!remoteResponse.ok) throw new Error("Remote file not found")
 
-            lastUsedPath = dataURL
+            lastUsedPath = remoteDataPath
             return await remoteResponse.json()
         } catch (remoteError) {
             console.error("Failed to load radio meta from both sources.", remoteError)

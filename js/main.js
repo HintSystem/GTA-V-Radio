@@ -1,5 +1,5 @@
-import { radioMeta } from "/js/constants.js"
-import { StationMeta } from "/js/radio.js"
+import { radioMeta } from "./constants.js"
+import { StationMeta } from "./radio.js"
 
 /** @type {RadioStation | undefined} */
 let station = undefined
@@ -154,7 +154,7 @@ radioMeta.then(function createRadioStationButtons (meta) {
         const stationButton = document.createElement("input")
         stationButton.type = "radio"
         stationButton.name = "selected_station"
-        
+
         const stationMeta = new StationMeta(meta.stations[i].path)
         
         stationButton.addEventListener("click", () => {

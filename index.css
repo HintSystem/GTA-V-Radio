@@ -1,0 +1,83 @@
+@font-face {
+    font-family: 'Pricedown';
+    src: url('assets/Pricedown\ Bl.otf');
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    height: 100vh;
+    position: static;
+    background: url('assets/scenes/cropduster.jpg') no-repeat center center/cover;
+    background-attachment: fixed;
+    color: white;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.blur-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    backdrop-filter: blur(3px);
+    z-index: -1;
+}
+
+.title {
+    display: flex;
+    align-items: center;
+    margin-bottom: min(4rem, 5.6vw);
+
+    img { height: 10rem; }
+    span {
+        font-family: 'Pricedown';
+        font-size: 3.5rem;
+        margin-left: 0.85rem;
+        text-shadow: 
+            -3px -3px 0 black,  
+            3px -3px 0 black,
+            -3px  3px 0 black,
+            3px  3px 0 black;
+    }
+}
+
+.container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem
+}
+
+#stationList {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem;
+    width: calc(100vw - 0.6rem);
+    margin-bottom: 1rem;
+
+    input:checked {
+        outline: 0.35rem solid rgb(112, 182, 213);
+    }
+
+    input {
+        appearance: none;
+        border: none;
+        outline: inherit;
+        cursor: pointer;
+
+        background-color: rgba(255, 255, 255, 0.35);
+        backdrop-filter: blur(0.2vw);
+        border-radius: 100%;
+        margin: 0;
+        padding: 0.5rem;
+        height: min(20vw, 5.6rem);
+        width: min(20vw, 5.6rem);
+        img {
+            pointer-events: none;
+            height: 100%;
+            width: 100%;
+        }
+    }
+}

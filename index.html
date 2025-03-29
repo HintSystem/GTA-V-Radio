@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>GTA V Radio</title>
+        <link rel="icon" type="image/x-icon" href="favicon.ico">
+        <link rel="stylesheet" href="index.css">
+    </head>
+    <body>
+        <div class="blur-overlay"></div>
+        <span style="position: absolute; padding: 0.2rem; right: 0; border-radius: 5px; background-color: rgba(0, 0, 0, 0.2);">Time: <span id="time">0</span></span>
+        <script>
+            const time = document.getElementById("time")
+            setInterval(() => {
+                time.innerText = (Date.now() % (1000 * 60)) / 1000
+            }, 100)
+        </script>
+
+        <div class="container">
+            <div class="title">
+                <img src="assets/images/gta_v.png" fetchpriority="low"/>
+                <span>Radio</span>
+            </div>
+            <div id="stationList"></div>
+        </div>
+
+        <script type="module" src="js/main.js"></script>
+    </body>
+</html>

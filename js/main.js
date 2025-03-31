@@ -11,7 +11,7 @@ let station = undefined
  * @property {number?} audibleDuration - Audible duration of audio
  */
 
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+let audioContext = new (window.AudioContext || window.webkitAudioContext)();
 class AudioManager {
     /**
      * @type {HTMLAudioElement}
@@ -132,6 +132,7 @@ function onSegmentEnd() {
 const staticAudio = new AudioManager({ path: "assets/sfx/RADIO_STATIC_LOOP.wav" }, masterGain)
 
 function syncToStation() {
+    audioContext.resume()
     if (MainTrack) { MainTrack.destroy() }
     if (VoiceOverTrack) { VoiceOverTrack.destroy() }
 
@@ -150,25 +151,30 @@ radioMeta.then(function createRadioStationButtons (meta) {
     const stationList = document.getElementById("stationList")
 
     for (let i = 0; i < meta.stations.length; i++) {
+        const stationLabel = document.createElement("label")
         const stationIcon = document.createElement("img")
-        const stationButton = document.createElement("input")
-        stationButton.type = "radio"
-        stationButton.name = "selected_station"
+        const stationInput = document.createElement("input")
+        stationInput.hidden = true
+        stationInput.type = "radio"
+        stationInput.name = "selected_station"
 
         const stationMeta = new StationMeta(meta.stations[i].path)
         
-        stationButton.addEventListener("click", () => {
+        stationInput.addEventListener("click", () => {
             stationMeta.createStation().then((newStation) => {
                 station = newStation
                 syncToStation()
             })
         })
         
-        stationList.appendChild(stationButton)
+        stationList.appendChild(stationLabel)
+        stationLabel.appendChild(stationInput)
         stationMeta.loadMeta()
             .then((meta) => {
                 stationIcon.src = stationMeta.getAbsolutePath(meta.info.icon.color)
-                stationButton.appendChild(stationIcon)
+                stationIcon.alt = meta.info.title
+                stationInput.ariaLabel = meta.info.title
+                stationLabel.appendChild(stationIcon)
             })
     }
 })

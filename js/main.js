@@ -43,7 +43,9 @@ class AudioManager {
         if (autoDestroy) { this.audio.addEventListener("ended", () => this.destroy()) }
     }
 
-    play() { this.audio.play() }
+    resume() { this.audio.play(); }
+
+    play() { this.audio.currentTime = 0; this.audio.play() }
 
     pause() { this.audio.pause() }
 
@@ -108,7 +110,7 @@ let VoiceOverTrack = undefined
 function playSegment(segment, time = undefined) {
     MainTrack = new AudioManager(segment, trackGain)
     if (time) { MainTrack.audio.currentTime = time }
-    MainTrack.play()
+    MainTrack.resume()
 
     if (segment.voiceOver) {
         VoiceOverTrack = new AudioManager(segment.voiceOver, masterGain)
@@ -131,10 +133,16 @@ function onSegmentEnd() {
 
 const staticAudio = new AudioManager({ path: "assets/sfx/RADIO_STATIC_LOOP.wav" }, masterGain)
 
-function syncToStation() {
-    audioContext.resume()
+function stopPlayingTracks() {
     if (MainTrack) { MainTrack.destroy() }
     if (VoiceOverTrack) { VoiceOverTrack.destroy() }
+}
+
+function syncToStation(newStation) {
+    stopPlayingTracks()
+
+    station = newStation
+    audioContext.resume()
 
     staticAudio.play()
 
@@ -147,34 +155,55 @@ function syncToStation() {
     MainTrack.onAudibleEnd(onSegmentEnd)
 }
 
+function newStationButton() {
+    const label = document.createElement("label")
+    const input = document.createElement("input")
+    input.hidden = true
+    input.type = "radio"
+    input.name = "selected_station"
+    const iconBorder = document.createElement("span")
+    const icon = document.createElement("img")
+    icon.alt = "loading"
+
+    label.appendChild(input)
+    label.appendChild(iconBorder)
+
+    return {
+        label,
+        input,
+        icon,
+        loadIcon: (iconSrc, iconAlt) => {
+            icon.alt = iconAlt
+            icon.src = iconSrc
+            iconBorder.appendChild(icon)
+        }
+    }
+}
+
 radioMeta.then(function createRadioStationButtons (meta) {
+    const noStationBtn = newStationButton()
+    noStationBtn.input.checked = true
+    noStationBtn.loadIcon("assets/images/no_radio.svg", "No radio")
+    noStationBtn.label.addEventListener("click", stopPlayingTracks)
+
     const stationList = document.getElementById("stationList")
 
     for (let i = 0; i < meta.stations.length; i++) {
-        const stationLabel = document.createElement("label")
-        const stationIcon = document.createElement("img")
-        const stationInput = document.createElement("input")
-        stationInput.hidden = true
-        stationInput.type = "radio"
-        stationInput.name = "selected_station"
-
         const stationMeta = new StationMeta(meta.stations[i].path)
-        
-        stationInput.addEventListener("click", () => {
-            stationMeta.createStation().then((newStation) => {
-                station = newStation
-                syncToStation()
-            })
+        const stationBtn = newStationButton()
+
+        stationBtn.input.addEventListener("click", () => {
+            console.log("station")
+            stationMeta.createStation().then(syncToStation)
         })
         
-        stationList.appendChild(stationLabel)
-        stationLabel.appendChild(stationInput)
+        stationList.appendChild(stationBtn.label)
         stationMeta.loadMeta()
             .then((meta) => {
-                stationIcon.src = stationMeta.getAbsolutePath(meta.info.icon.color)
-                stationIcon.alt = meta.info.title
-                stationInput.ariaLabel = meta.info.title
-                stationLabel.appendChild(stationIcon)
+                stationBtn.input.ariaLabel = meta.info.title
+                stationBtn.loadIcon(stationMeta.getAbsolutePath(meta.info.icon.color), meta.info.title)
             })
     }
+
+    stationList.appendChild(noStationBtn.label)
 })

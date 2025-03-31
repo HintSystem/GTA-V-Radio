@@ -8,7 +8,10 @@ body {
     padding: 0;
     height: 100vh;
     position: static;
-    background: url('assets/scenes/cropduster.jpg') no-repeat center center/cover;
+    background-image: url("assets/scenes/cropduster.jpg");
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
     background-attachment: fixed;
     color: white;
     font-family: Arial, Helvetica, sans-serif;
@@ -18,13 +21,14 @@ body {
     position: fixed;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
+    width: 100vw;
+    height: 100vh;
     backdrop-filter: blur(3px);
     z-index: -1;
 }
 
 .title {
+    user-select: none;
     display: flex;
     align-items: center;
     margin-bottom: min(4rem, 5.6vw);
@@ -57,27 +61,35 @@ body {
     width: calc(100vw - 0.6rem);
     margin-bottom: 1rem;
 
-    label:has(> input:checked) {
-        outline: 0.35rem solid rgb(112, 182, 213);
-    }
-
     label {
-        appearance: none;
-        border: none;
-        outline: inherit;
         cursor: pointer;
 
-        background-color: rgba(255, 255, 255, 0.35);
-        backdrop-filter: blur(0.2vw);
-        border-radius: 100%;
+        span {
+            display: block;
+            background-color: rgba(255, 255, 255, 0.35);
+            backdrop-filter: blur(0.2vw);
+            border-radius: 100%;
 
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0.5rem;
-        height: min(22vw, 6rem);
-        width: min(22vw, 6rem);
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0.5rem;
+            height: min(22vw, 6rem);
+            width: min(22vw, 6rem);
+        }
+
+        input:checked + span {
+            outline: 0.35rem solid rgb(112, 182, 213);
+        }
+
         img {
+            user-select: none;
             pointer-events: none;
+
+            display: flex;
+            background: none;
+            text-align: center;
+            align-items: center;
+            justify-content: center;
             height: 100%;
             width: 100%;
         }

@@ -25,6 +25,14 @@
             <div id="stationList"></div>
         </div>
 
+        <script>
+            const backgrounds = ["cropduster.jpg", "lighthouse.jpg", "los_santos_skyline.jpg", "mount_chiliad.png"]
+
+            const day = Math.floor(Date.now() / (1000 * 60 * 60 * 24))
+            const selectBackground = backgrounds[day % backgrounds.length]
+            document.body.style.backgroundImage = `url('assets/scenes/${selectBackground}')`
+        </script>
+
         <script type="module" src="js/main.js"></script>
     </body>
 </html>

@@ -51,16 +51,58 @@ export class StationMeta {
     getAbsolutePath(relativePath) {
         return getDataPath() + this.path + "/" + relativePath
     }
+
+    getIcon(type) {
+        if (!this.meta) { return undefined }
+
+        const icon = this.meta.info.icon[type]
+        if (icon) { return this.getAbsolutePath(icon) }
+        return undefined
+    }
+
+    /** Tries to get preffered icon type, defaults to closest alternative otherwise */
+    getPrefferedIcon(type) {
+        const priority = ["color", "monochrome", "full"]
+
+        let icon = this.getIcon(type)
+        let index = 0
+        while (!icon) {
+            const newIconType = priority[index]
+            index++
+            
+            if (newIconType != type) { return this.getIcon(newIconType) }
+            if (index >= priority.length) { return undefined }
+        }
+        return icon
+    }
 }
 
-class RadioStation extends StationMeta {
+/**
+ * @abstract
+ * @extends {StationMeta}
+ */
+export class RadioStation extends StationMeta {
     constructor(path, meta) {
         super(path, meta)
+        if (this.constructor === RadioStation) { throw new Error("Abstract class 'RadioStation' cannot be instantiated directly.") }
+
         this.accumulatedTime = 0
         this.type = ""
     }
 
-    /** Normalizes the path and prevents object reference mutation */
+    /**
+     * Get the next segment to play
+     * @abstract
+     */
+    nextSegment() { throw new Error("Method 'nextSegment()' must be implemented.") }
+
+    /**
+     * Get the segment that is currently synced to time
+     * @abstract
+     */
+    getSyncedSegment() { throw new Error("Method 'getSyncedSegment()' must be implemented.") }
+
+    /** Creates a new segment without object reference mutation and normalizes path */
     newSegment(segmentInfo) {
         const segment = Object.assign({}, segmentInfo)
         segment.path = this.getAbsolutePath(segmentInfo.path)

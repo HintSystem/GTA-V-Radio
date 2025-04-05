@@ -1,5 +1,5 @@
-import { radioMeta } from "./constants.js"
-import { StationMeta } from "./radio.js"
+import { radioMeta, pageIcon } from "./constants.js"
+import { StationMeta, RadioStation } from "./radio.js"
 
 /** @type {RadioStation | undefined} */
 let station = undefined
@@ -131,17 +131,42 @@ function onSegmentEnd() {
     MainTrack.onAudibleEnd(onSegmentEnd)
 }
 
-const staticAudio = new AudioManager({ path: "assets/sfx/RADIO_STATIC_LOOP.wav" }, masterGain)
+const defaultTitle = document.title
+function resetRadioMeta() {
+    document.title = defaultTitle
+    pageIcon.reset()
+
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata({})
+    }
+}
+
+function updateRadioMeta() {
+    const title = station.meta.info.title
+
+    document.title = title
+    pageIcon.element.href = station.getPrefferedIcon("color")
+    pageIcon.element.type = "image/svg+xml"
+    if ('mediaSession' in navigator) {
+        let artwork = []
+        const coverArt = station.getIcon("cover")
+        if (coverArt) { artwork = [ { src: coverArt, sizes: "512x512", type: "image/png" } ] }
+        
+        navigator.mediaSession.metadata = new MediaMetadata({ title, artist: station.meta.info.dj, artwork })
+    }
+}
 
 function stopPlayingTracks() {
     if (MainTrack) { MainTrack.destroy() }
     if (VoiceOverTrack) { VoiceOverTrack.destroy() }
 }
 
+const staticAudio = new AudioManager({ path: "assets/sfx/RADIO_STATIC_LOOP.wav" }, masterGain)
 function syncToStation(newStation) {
-    stopPlayingTracks()
-
     station = newStation
+    updateRadioMeta()
+
+    stopPlayingTracks()
     audioContext.resume()
 
     staticAudio.play()
@@ -184,7 +209,10 @@ radioMeta.then(function createRadioStationButtons (meta) {
     const noStationBtn = newStationButton()
     noStationBtn.input.checked = true
     noStationBtn.loadIcon("assets/images/no_radio.svg", "No radio")
-    noStationBtn.label.addEventListener("click", stopPlayingTracks)
+    noStationBtn.label.addEventListener("click", () => {
+        stopPlayingTracks()
+        resetRadioMeta()
+    })
 
     const stationList = document.getElementById("stationList")
 
@@ -200,8 +228,7 @@ radioMeta.then(function createRadioStationButtons (meta) {
         stationList.appendChild(stationBtn.label)
         stationMeta.loadMeta()
             .then((meta) => {
-                stationBtn.input.ariaLabel = meta.info.title
-                stationBtn.loadIcon(stationMeta.getAbsolutePath(meta.info.icon.color), meta.info.title)
+                stationBtn.loadIcon(stationMeta.getPrefferedIcon("color"), meta.info.title)
             })
     }
 

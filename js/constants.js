@@ -1,3 +1,14 @@
+export const pageIcon = {
+    element: document.createElement("link"),
+    reset: () => {
+        pageIcon.element.href = "assets/images/gta_v.ico"
+        pageIcon.element.removeAttribute("type")
+    }
+}
+pageIcon.element.rel = "icon"
+pageIcon.reset()
+document.head.appendChild(pageIcon.element)
+
 export const localDataPath = "data/"
 export const remoteDataPath = "https://raw.githubusercontent.com/RegalTerritory/GTA-V-Radio-Stations/master/"
 

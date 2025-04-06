@@ -16,13 +16,29 @@ function seededPRNG() {
     return value
 }
 
+/** @typedef {"dynamic" | "talkshow" | "static"} StationType*/
+
+/**
+ * Metadata for a radio station
+ * @property {string} path - The station path
+ * @property {?Object} meta - Metadata object or null if not yet loaded
+ */
 export class StationMeta {
     constructor(path, meta = null) {
         this.path = path
         this.meta = meta
+
+        /**
+         * @private
+         * @type {?Promise<Object>}
+         */
         this._metaPromise = null
     }
 
+    /**
+     * Creates a radio station corresponding to the type defined in metadata
+     * @returns {Promise<RadioStation>}
+     */
     async createStation() {
         if (!this.meta) { await this.loadMeta() }
 
@@ -42,8 +58,8 @@ export class StationMeta {
                 .then(res => res.json())
                 .then(res => this.meta = res)
                 .catch((err) => {
-                    console.error(`Failed to load "${this.path}" metadata:`, err);
-                });
+                    console.error(`Failed to load "${this.path}" metadata:`, err)
+                })
         }
         return this._metaPromise;
     }
@@ -78,16 +94,21 @@ export class StationMeta {
 }
 
 /**
+ * Class that describes what a radio station must implement
  * @abstract
- * @extends {StationMeta}
+ * @extends {StationMeta} 
  */
 export class RadioStation extends StationMeta {
+    /** @type {StationType} */
+    type
+    /** @type {number} - The amount of time that has passed since the first track of the radio station played (required for getting a synced segment) */
+    accumulatedTime
+
     constructor(path, meta) {
         super(path, meta)
         if (this.constructor === RadioStation) { throw new Error("Abstract class 'RadioStation' cannot be instantiated directly.") }
 
         this.accumulatedTime = 0
-        this.type = ""
     }
 
     /**
@@ -150,8 +171,8 @@ class StaticStation extends RadioStation {
 class TalkshowStation extends RadioStation {
     constructor(path, meta) {
         super(path, meta)
-        this.prevSegment = undefined
         this.segmentIndex = 0
+        this.prevSegment = null
         this.type = "talkshow"
     }
 
@@ -169,7 +190,7 @@ class TalkshowStation extends RadioStation {
         const randNum = seededPRNG()
         const randPercent = (randNum / 0xFFFFFFFF) * 100
 
-        const isTrack = this.prevSegment === undefined || !this.prevSegment.isTrack || randPercent < 50
+        const isTrack = this.prevSegment === null || !this.prevSegment.isTrack || randPercent < 50
         const segment = this.newSegment(isTrack ? this.getTrack() : this.getRandomTransition(randNum))
         
         this.segmentIndex++
@@ -180,6 +201,7 @@ class TalkshowStation extends RadioStation {
         rngIndex = 0
         this.segmentIndex = 0
         this.accumulatedTime = 0
+        this.prevSegment = null
         
         const start = this.startTimestamp
         let lastTime = 0
@@ -200,7 +222,7 @@ class TalkshowStation extends RadioStation {
 class DynamicStation extends RadioStation {
     constructor(path, meta) {
         super(path, meta)
-        this.prevSegment = undefined
+        this.prevSegment = null
         this.type = "dynamic"
     }
 
@@ -228,7 +250,7 @@ class DynamicStation extends RadioStation {
         const randNum = seededPRNG()
         const randPercent = (randNum / 0xFFFFFFFF) * 100
 
-        const isTrack = this.prevSegment === undefined || !this.prevSegment.isTrack || randPercent < 50
+        const isTrack = this.prevSegment === null || !this.prevSegment.isTrack || randPercent < 50
 
         const segment = this.newSegment(isTrack ? this.getRandomTrack(randNum) : this.getRandomTransition(randNum))
         segment.isTrack = isTrack
@@ -239,8 +261,8 @@ class DynamicStation extends RadioStation {
 
     getSyncedSegment() {
         rngIndex = 0
-        this.prevSegment = undefined
         this.accumulatedTime = 0
+        this.prevSegment = null
         
         const start = this.startTimestamp
         let lastTime = 0

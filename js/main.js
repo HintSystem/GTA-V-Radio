@@ -213,7 +213,7 @@ function stopStation() {
     stopPlayingTracks()
     resetRadioMeta()
 
-    const callbacks = [].concat(syncListeners["none"] || [], syncListeners[""] || [])
+    const callbacks = stationListeners[null] || []
     callbacks.forEach((callback) => { console.log(callback); callback() })
     stationIndex = null
 }

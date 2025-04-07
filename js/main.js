@@ -11,7 +11,7 @@ let stationIndex = null
 let stationList = []
 
 function onSegmentEnd() {
-    playSegment(station.nextSegment(true))
+    playSegment(station.nextSegment())
     MainTrack.onAudibleEnd(onSegmentEnd)
 }
 
@@ -65,7 +65,7 @@ function syncToStation() {
     staticAudio.play()
     
     const syncedSegment = station.getSyncedSegment()
-    playSegment(syncedSegment[0], syncedSegment[1])
+    playSegment(syncedSegment)
     console.log(syncedSegment)
     
     MainTrack.audio.addEventListener("canplay", () => { staticAudio.stop() })

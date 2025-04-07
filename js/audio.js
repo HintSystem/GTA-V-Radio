@@ -1,8 +1,8 @@
 /**
- * @typedef {Object} audioInfo
- * @property {string} path - Path to the audio file
- * @property {number?} duration - Total duration of audio
- * @property {number?} audibleDuration - Audible duration of audio
+ * @typedef {Object} AudioInfo
+ * @property {string} path - Absolute audio path
+ * @property {number?} duration - In seconds
+ * @property {number?} audibleDuration - In seconds
  */
 
 let audioContext = new (window.AudioContext || window.webkitAudioContext)()
@@ -11,11 +11,15 @@ export class AudioManager {
     audio
     /** @type {MediaElementAudioSourceNode} */
     source
+    /** @private @type {() => void} */
+    _onSync
+    /** @private @type {number} */
+    _syncInterval
 
     /**
-     * @param {audioInfo | HTMLAudioElement} audioInfo
+     * @param {AudioInfo | HTMLAudioElement} audioInfo
      * @param {AudioNode?} connection - node to connect to
-     * @param {boolean} autoDestroy - when set to True, destroys the audio when finished
+     * @param {boolean} autoDestroy - when set to True, destroys the audio on end
      */
     constructor(audioInfo, connection = null, autoDestroy = false) {
         if (audioInfo instanceof HTMLAudioElement) {
@@ -34,11 +38,45 @@ export class AudioManager {
 
     resume() { this.audio.play(); }
 
-    play() { this.audio.currentTime = 0; this.audio.play() }
-
     pause() { this.audio.pause() }
 
     stop() { this.audio.pause(); this.audio.currentTime = 0 }
+
+    play() { this.audio.currentTime = 0; this.audio.play() }
+
+    get isBuffering() { return this.audio.readyState < 4 && !this.audio.paused }
+
+    /**
+     * Plays the audio synchronized to a timestamp.
+     * @param {number} timestamp - UTC time (in milliseconds) representing when the audio originally started
+     */
+    playSynced (timestamp) {
+        if (this._onSync) {
+            this.audio.removeEventListener("playing", this._onSync)
+            this._onSync = null
+        }
+        if (this._syncInterval) {
+            clearInterval(this._syncInterval)
+            this._syncInterval = null
+        }
+
+        if (timestamp) {
+            this._onSync = () => {
+                const audioTime = (Date.now() - timestamp) / 1000
+                const desync = audioTime - this.audio.currentTime
+                const desyncThreshold = 0.8
+
+                if (this.audio.currentTime > 0.1) { console.log(`audio desync: ${desync}, time: ${this.audio.currentTime}, '${this.info.path}'`, ) }
+                if (desync > desyncThreshold) { this.audio.currentTime = audioTime }
+            }
+            this._onSync()
+            this._syncInterval = setInterval(() => {
+                if (!this.isBuffering) { this._onSync() }
+            }, 8000)
+            this.audio.addEventListener("playing", this._onSync)
+        }
+        this.audio.play()
+    }
 
     /**
      * Executes callback until audio has reached the time defined in delay
@@ -71,6 +109,11 @@ export class AudioManager {
     }
 
     destroy() {
+        if (this._syncInterval) {
+            clearInterval(this._syncInterval)
+            this._syncInterval = null
+        }
+
         if (this.audio) {
             this.stop()
             this.audio.removeAttribute("src")
@@ -101,17 +144,18 @@ export function stopAudioTracks() {
     if (VoiceOverTrack) { VoiceOverTrack.destroy() }
 }
 
-export function playSegment(segment, time = null) {
-    MainTrack = new AudioManager(segment, trackGain)
-    if (time) { MainTrack.audio.currentTime = time }
-    MainTrack.resume()
+/**
+ * @param {import("./radio").SyncedSegment} segment 
+ */
+export function playSegment(segment) {
+    MainTrack = new AudioManager(segment, trackGain, true)
+    MainTrack.playSynced(segment.startTimestamp)
 
     if (segment.voiceOver) {
-        VoiceOverTrack = new AudioManager(segment.voiceOver, masterGain)
+        VoiceOverTrack = new AudioManager(segment.voiceOver, masterGain, true)
 
         VoiceOverTrack.audio.addEventListener("ended", () => {
             trackGain.gain.linearRampToValueAtTime(1, audioContext.currentTime + 2)
-            VoiceOverTrack.destroy()
         })
         MainTrack.setTimeout(() => {
             trackGain.gain.linearRampToValueAtTime(0.4, audioContext.currentTime + 2)
@@ -120,6 +164,4 @@ export function playSegment(segment, time = null) {
     }
 }
 
-export default {
-    context: audioContext, masterGain, trackGain
-}
+export default { context: audioContext, masterGain, trackGain }

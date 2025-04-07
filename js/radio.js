@@ -16,11 +16,14 @@ function seededPRNG() {
     return value
 }
 
-/** @typedef {"dynamic" | "talkshow" | "static"} StationType*/
+/** @typedef { import("./radio").SegmentInfo } SegmentInfo */
+/** @typedef { import("./radio").SyncedSegment } SyncedSegment */
+
+/** @typedef {"dynamic" | "talkshow" | "static"} StationType */
 
 /**
  * Metadata for a radio station
- * @property {string} path - The station path
+ * @property {string} path - Path to station
  * @property {?Object} meta - Metadata object or null if not yet loaded
  */
 export class StationMeta {
@@ -68,6 +71,18 @@ export class StationMeta {
         return getDataPath() + this.path + "/" + relativePath
     }
 
+    /**
+     * Returns a cloned object with a resolved path by turning a relative path into an absolute one, based on the radio station path
+     * @template {{path: string}} T
+     * @param {T} object 
+     * @returns {T}
+     */
+    resolveObjectPath(object) {
+        const info = Object.assign({}, object)
+        info.path = this.getAbsolutePath(object.path)
+        return info
+    }
+
     getIcon(type) {
         if (!this.meta) { return undefined }
 
@@ -112,24 +127,43 @@ export class RadioStation extends StationMeta {
     }
 
     /**
-     * Get the next segment to play
+     * Retrieves the next segment to play.
+     *
+     * This method also has side effects, such as incrementing `accumulatedTime`,
+     * and modifying other internal state properties depending on the implementation. 
+     *
      * @abstract
+     * @returns {SyncedSegment} The next segment to be played.
      */
     nextSegment() { throw new Error("Method 'nextSegment()' must be implemented.") }
 
     /**
-     * Get the segment that is currently synced to time
+     * Retrieves the segment that is currently synced to time.
+     * 
+     * This method also has side effects, such as incrementing `accumulatedTime`,
+     * and modifying other internal state properties depending on the implementation.
+     * 
      * @abstract
+     * @returns {SyncedSegment}
      */
     getSyncedSegment() { throw new Error("Method 'getSyncedSegment()' must be implemented.") }
 
-    /** Creates a new segment without object reference mutation and normalizes path */
-    newSegment(segmentInfo) {
-        const segment = Object.assign({}, segmentInfo)
-        segment.path = this.getAbsolutePath(segmentInfo.path)
+    /**
+     * Creates a new segment with a resolved path and startTimestamp
+     * @param {SegmentInfo} segmentInfo
+     * @param {number} accumulatedTime - amount of time passed in seconds since the reset of the radio station to reach this synced segment
+     * @returns {SyncedSegment}
+     */
+    newSyncedSegment(segmentInfo, accumulatedTime) {
+        const segment = this.resolveObjectPath(segmentInfo)
+        segment.startTimestamp = this.startTimestamp + (accumulatedTime * 1000)
         return segment
     }
 
+    /**
+     * UTC time (in milliseconds) when the radio station playback sync was reset (resets every month)
+     * @type {number}
+     */
     get startTimestamp() { return Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1) }
 }
 
@@ -142,9 +176,11 @@ class StaticStation extends RadioStation {
 
     nextSegment() {
         const segmentList = this.meta.fileGroups.track
+        const segment = this.newSyncedSegment(segmentList[this.segmentIndex % segmentList.length], this.accumulatedTime)
         
         this.segmentIndex++
-        return this.newSegment(segmentList[this.segmentIndex % segmentList.length])
+        this.accumulatedTime += segment.audibleDuration || segment.duration
+        return segment
     }
 
     getSyncedSegment() {
@@ -153,17 +189,11 @@ class StaticStation extends RadioStation {
         this.accumulatedTime = 0
         
         const start = this.startTimestamp
-        let lastTime = 0
         while (true) {
             const segment = this.nextSegment()
-            const duration = segment.audibleDuration || segment.duration
-            this.accumulatedTime += duration
-
             const time = start + (this.accumulatedTime * 1000)
-            if (time > Date.now()) {
-                return [segment, (Date.now() - lastTime) / 1000]
-            }
-            lastTime = time
+
+            if (time > Date.now()) { return segment }
         }
     }
 }
@@ -191,9 +221,13 @@ class TalkshowStation extends RadioStation {
         const randPercent = (randNum / 0xFFFFFFFF) * 100
 
         const isTrack = this.prevSegment === null || !this.prevSegment.isTrack || randPercent < 50
-        const segment = this.newSegment(isTrack ? this.getTrack() : this.getRandomTransition(randNum))
+        const segmentInfo = isTrack ? this.getTrack() : this.getRandomTransition(randNum)
+
+        const segment = this.newSyncedSegment(segmentInfo, this.accumulatedTime)
+        segment.isTrack = isTrack
         
         this.segmentIndex++
+        this.accumulatedTime += segment.audibleDuration || segment.duration
         return segment
     }
 
@@ -204,17 +238,11 @@ class TalkshowStation extends RadioStation {
         this.prevSegment = null
         
         const start = this.startTimestamp
-        let lastTime = 0
         while (true) {
-            const segment = this.nextSegment(false)
-            const duration = segment.audibleDuration || segment.duration
-            this.accumulatedTime += duration
-
+            const segment = this.nextSegment()
             const time = start + (this.accumulatedTime * 1000)
-            if (time > Date.now()) {
-                return [segment, (Date.now() - lastTime) / 1000]
-            }
-            lastTime = time
+
+            if (time > Date.now()) { return segment }
         }
     }
 }
@@ -232,7 +260,7 @@ class DynamicStation extends RadioStation {
 
         if (selectedTrack.voiceovers) {
             const voiceovers = selectedTrack.voiceovers
-            selectedTrack.voiceOver = this.newSegment(voiceovers[seededPRNG() % voiceovers.length])
+            selectedTrack.voiceOver = this.resolveObjectPath(voiceovers[seededPRNG() % voiceovers.length])
         }
 
         return selectedTrack
@@ -251,11 +279,13 @@ class DynamicStation extends RadioStation {
         const randPercent = (randNum / 0xFFFFFFFF) * 100
 
         const isTrack = this.prevSegment === null || !this.prevSegment.isTrack || randPercent < 50
+        const segmentInfo = isTrack ? this.getRandomTrack(randNum) : this.getRandomTransition(randNum)
 
-        const segment = this.newSegment(isTrack ? this.getRandomTrack(randNum) : this.getRandomTransition(randNum))
+        const segment = this.newSyncedSegment(segmentInfo, this.accumulatedTime)
         segment.isTrack = isTrack
-        
+
         this.prevSegment = segment
+        this.accumulatedTime += segment.audibleDuration || segment.duration
         return segment
     }
 
@@ -265,17 +295,11 @@ class DynamicStation extends RadioStation {
         this.prevSegment = null
         
         const start = this.startTimestamp
-        let lastTime = 0
         while (true) {
             const segment = this.nextSegment()
-            const duration = segment.audibleDuration || segment.duration
-            this.accumulatedTime += duration
-
             const time = start + (this.accumulatedTime * 1000)
-            if (time > Date.now()) {
-                return [segment, (Date.now() - lastTime) / 1000]
-            }
-            lastTime = time
+
+            if (time > Date.now()) { return segment }
         }
     }
 }

@@ -1,20 +1,7 @@
 import { getDataPath } from "./constants.js"
+import { SeededPRNG, UsedRandoms } from "./utility.js"
 
-let seed = 1234
-let rngIndex = 0
-function seededPRNG() {
-    // Simple hash function (xorshift-style)
-    let value = seed ^ rngIndex;
-    value = (value ^ (value >>> 21)) * 0x45d9f3b;
-    value = (value ^ (value >>> 15)) * 0x45d9f3b;
-    value = value ^ (value >>> 13);
-
-    // Ensure value is a positive integer
-    value = value >>> 0;
-
-    rngIndex++
-    return value
-}
+const PRNG = new SeededPRNG(1)
 
 /** @typedef { import("./radio").SegmentInfo } SegmentInfo */
 /** @typedef { import("./radio").SyncedSegment } SyncedSegment */
@@ -123,6 +110,7 @@ export class RadioStation extends StationMeta {
         super(path, meta)
         if (this.constructor === RadioStation) { throw new Error("Abstract class 'RadioStation' cannot be instantiated directly.") }
 
+        PRNG.seed = this.startTimestamp // seed needs to reset every month
         this.accumulatedTime = 0
     }
 
@@ -184,7 +172,6 @@ class StaticStation extends RadioStation {
     }
 
     getSyncedSegment() {
-        rngIndex = 0
         this.segmentIndex = 0
         this.accumulatedTime = 0
         
@@ -203,6 +190,7 @@ class TalkshowStation extends RadioStation {
         super(path, meta)
         this.segmentIndex = 0
         this.prevSegment = null
+        this.usedRandoms = new UsedRandoms(8)
         this.type = "talkshow"
     }
 
@@ -211,28 +199,29 @@ class TalkshowStation extends RadioStation {
         return segmentList[this.segmentIndex % segmentList.length]
     }
 
-    getRandomTransition(randNum) {
+    getRandomTransition() {
         const segmentList = this.meta.fileGroups.id
-        return segmentList[randNum % segmentList.length]
+        const random = this.usedRandoms.ensureUnique("transition", segmentList.length-1, () => {
+            return PRNG.next() % segmentList.length
+        })
+        return segmentList[random]
     }
 
     nextSegment() {
-        const randNum = seededPRNG()
-        const randPercent = (randNum / 0xFFFFFFFF) * 100
-
-        const isTrack = this.prevSegment === null || !this.prevSegment.isTrack || randPercent < 50
-        const segmentInfo = isTrack ? this.getTrack() : this.getRandomTransition(randNum)
+        const isTrack = this.prevSegment === null || !this.prevSegment.isTrack
+        const segmentInfo = isTrack ? this.getTrack() : this.getRandomTransition()
 
         const segment = this.newSyncedSegment(segmentInfo, this.accumulatedTime)
         segment.isTrack = isTrack
         
-        this.segmentIndex++
+        if (isTrack) { this.segmentIndex++ }
+        this.prevSegment = segment
         this.accumulatedTime += segment.audibleDuration || segment.duration
         return segment
     }
 
     getSyncedSegment() {
-        rngIndex = 0
+        PRNG.index = 0
         this.segmentIndex = 0
         this.accumulatedTime = 0
         this.prevSegment = null
@@ -251,16 +240,21 @@ class DynamicStation extends RadioStation {
     constructor(path, meta) {
         super(path, meta)
         this.prevSegment = null
+        this.usedRandoms = new UsedRandoms(8)
+        this.usedRandoms.map
         this.type = "dynamic"
     }
 
     getRandomTrack(randNum) {
         const tracks = this.meta.fileGroups.track
-        const selectedTrack = tracks[randNum % tracks.length]
+        const randomTrack = this.usedRandoms.ensureUnique("track", tracks.length-1, () => {
+            return PRNG.next() % tracks.length
+        })
+        const selectedTrack = tracks[randomTrack]
 
         if (selectedTrack.voiceovers) {
             const voiceovers = selectedTrack.voiceovers
-            selectedTrack.voiceOver = this.resolveObjectPath(voiceovers[seededPRNG() % voiceovers.length])
+            selectedTrack.voiceOver = this.resolveObjectPath(voiceovers[randNum % voiceovers.length])
         }
 
         return selectedTrack
@@ -269,14 +263,16 @@ class DynamicStation extends RadioStation {
     getRandomTransition(randNum) {
         const select = randNum % 2
         const transitions = this.meta.fileGroups[ select == 0 ? "id" : "mono_solo" ]
-        const selectedTransition = transitions[randNum % transitions.length]
+        const randomTransition = this.usedRandoms.ensureUnique("transition", transitions.length-1, () => {
+            return PRNG.next() % transitions.length
+        })
 
-        return selectedTransition
+        return transitions[randomTransition]
     }
 
     nextSegment() {
-        const randNum = seededPRNG()
-        const randPercent = (randNum / 0xFFFFFFFF) * 100
+        const randNum = PRNG.next()
+        const randPercent = PRNG.toFloat(randNum) * 100
 
         const isTrack = this.prevSegment === null || !this.prevSegment.isTrack || randPercent < 50
         const segmentInfo = isTrack ? this.getRandomTrack(randNum) : this.getRandomTransition(randNum)
@@ -290,7 +286,7 @@ class DynamicStation extends RadioStation {
     }
 
     getSyncedSegment() {
-        rngIndex = 0
+        PRNG.index = 0
         this.accumulatedTime = 0
         this.prevSegment = null
         

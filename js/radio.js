@@ -1,5 +1,5 @@
 import { getDataPath } from "./constants.js"
-import { SeededPRNG, UsedRandoms } from "./utility.js"
+import { SeededPRNG, IndexDrawPoolManager } from "./utility.js"
 
 const PRNG = new SeededPRNG(1)
 
@@ -190,7 +190,7 @@ class TalkshowStation extends RadioStation {
         super(path, meta)
         this.segmentIndex = 0
         this.prevSegment = null
-        this.usedRandoms = new UsedRandoms(8)
+        this.indexDrawPools = new IndexDrawPoolManager()
         this.type = "talkshow"
     }
 
@@ -200,11 +200,8 @@ class TalkshowStation extends RadioStation {
     }
 
     getRandomTransition() {
-        const segmentList = this.meta.fileGroups.id
-        const random = this.usedRandoms.ensureUnique("transition", segmentList.length-1, () => {
-            return PRNG.next() % segmentList.length
-        })
-        return segmentList[random]
+        const transitions = this.meta.fileGroups.id
+        return transitions[this.indexDrawPools.nextUniqueIndex("id", transitions.length, PRNG.next())]
     }
 
     nextSegment() {
@@ -240,21 +237,17 @@ class DynamicStation extends RadioStation {
     constructor(path, meta) {
         super(path, meta)
         this.prevSegment = null
-        this.usedRandoms = new UsedRandoms(8)
-        this.usedRandoms.map
+        this.indexDrawPools = new IndexDrawPoolManager()
         this.type = "dynamic"
     }
 
     getRandomTrack(randNum) {
         const tracks = this.meta.fileGroups.track
-        const randomTrack = this.usedRandoms.ensureUnique("track", tracks.length-1, () => {
-            return PRNG.next() % tracks.length
-        })
-        const selectedTrack = tracks[randomTrack]
+        const selectedTrack = tracks[this.indexDrawPools.nextUniqueIndex("track", tracks.length, randNum)]
 
         if (selectedTrack.voiceovers) {
             const voiceovers = selectedTrack.voiceovers
-            selectedTrack.voiceOver = this.resolveObjectPath(voiceovers[randNum % voiceovers.length])
+            selectedTrack.voiceOver = this.resolveObjectPath(voiceovers[PRNG.next() % voiceovers.length])
         }
 
         return selectedTrack
@@ -262,12 +255,10 @@ class DynamicStation extends RadioStation {
 
     getRandomTransition(randNum) {
         const select = randNum % 2
-        const transitions = this.meta.fileGroups[ select == 0 ? "id" : "mono_solo" ]
-        const randomTransition = this.usedRandoms.ensureUnique("transition", transitions.length-1, () => {
-            return PRNG.next() % transitions.length
-        })
+        const transitionType = select == 0 ? "id" : "mono_solo"
+        const transitions = this.meta.fileGroups[transitionType]
 
-        return transitions[randomTransition]
+        return transitions[this.indexDrawPools.nextUniqueIndex(transitionType, transitions.length, randNum)]
     }
 
     nextSegment() {

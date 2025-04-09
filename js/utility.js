@@ -1,8 +1,8 @@
 export class SeededPRNG {
     constructor(seed) {
-        /** Equal seed values will deterministically generate the same set of pseudo random numbers */
+        /** @type {number} - Equal seed values will deterministically generate the same set of pseudo random numbers */
         this.seed = seed
-        /** The index determines which number to generate from the pseudo random set, making it possible to always generate the same number */
+        /** @type {number} - The index determines which number to generate from the pseudo random set, making it possible to always generate the same number */
         this.index = 0
     }
 
@@ -37,78 +37,64 @@ export class SeededPRNG {
     toFloat(number) { return number / 0xFFFFFFFF }
 }
 
-/** Stores the past `limit` numbers, going over the limit will dequeue a number */
-class RecentSet {
-    constructor(limit) {
-      this._limit = limit
-      this.set = new Set()
-      this.queue = []
-    }
-
-    get limit() { return this._limit }
-
-    set limit(value) {
-        if (this._limit === value) { return }
-        this._limit = value
-        while (this.queue.length > this._limit) { this.shift() }
-    }
-
-    shift() {
-        const oldest = this.queue.shift()
-        this.set.delete(oldest)
-    }
-  
-    add(num) {
-        if (this.queue.length === this._limit) { this.shift() }
-        this.queue.push(num)
-        this.set.add(num)
-    }
-  
-    has(num) { return this.set.has(num) }
-}
-
-export class UsedRandoms {
-    /** @type {Map<string, RecentSet>} - Stores all historical numbers in a RecentSet, indexed by `id` */
-    map
-    /** @type {number} - Represents the maximum value for `historyLimit` */
-    maxLimit
-
-    /** @param {number} maxLimit - If present, limits `historyLimit` to this number */
-    constructor(maxLimit = null) {
-        this.map = new Map()
-        this.maxLimit = maxLimit
+/** Draw pool for selecting random indexes while also avoiding repetitiveness */
+class IndexDrawPool {
+    /**
+     * @param {number} sourceSize - The length of the array to create an IndexDrawPool for
+     * @param {number} dontRepeatFor - The amount of consecutive indexes to guarantee uniqueness for
+     */
+    constructor(sourceSize, dontRepeatFor = 8) {
+        /** @type {number[]} - Available indexes that have not been used in the last `dontRepeatFor` draws */
+        this.draw = [...Array(sourceSize).keys()]
+        /** @type {number[]} - Queue with recently used indexes */
+        this.discard = []
+        /** @type {number} - Number of recent indexes to exclude from selection */
+        this.dontRepeatFor = dontRepeatFor
     }
 
     /**
-     * Returns a number from `generator` that tries to be unique from the last `historyLimit` numbers
-     * @param {string} id - Identifier for getting the RecentSet
-     * @param {number} historyLimit - The amount of numbers to store and check for uniqueness
-     * @param {() => number} generator - Function for generating random numbers
+     * Returns a non-repeating index from the pool using the given random integer
+     * @param {number} randomInteger - Random integer greater than 0 where maximum value is also greater than `sourceSize`
+     * @returns {number|null} Unique index from 0 to `sourceSize - 1` or null if all options are exhausted 
      */
-    ensureUnique(id, historyLimit, generator) {
-        if (this.maxLimit) { historyLimit = Math.min(this.maxLimit, historyLimit) }
-        if (!this.map.has(id)) {
-            this.map.set(id, new RecentSet(historyLimit))
+    next(randomInteger) {
+        if (this.draw.length === 0) return null
+
+        const randomIndex = randomInteger % this.draw.length
+        const selected = this.draw.splice(randomIndex, 1)[0]
+        this.discard.push(selected)
+
+        if (this.discard.length > this.dontRepeatFor) {
+            const index = this.discard.shift()
+            this.draw.push(index)
         }
 
-        const recentSet = this.map.get(id)
-        recentSet.limit = historyLimit
+        return selected
+    }
+}
 
-        const maxAttempts = 50
-        let attempts = 0
-        let candidate
-        do {
-            candidate = generator()
-            attempts++
-            if (attempts > maxAttempts) {
-                console.warn(`Unable to find a unique value for UsedRandom '${id}' after ${maxAttempts} attempts`)
-                break
-            }
-        } while (recentSet.has(candidate))
-        
-        //if (attempts > 1) { console.log(`Generating unique number for '${id}' took ${attempts} attempts`) }
-        
-        recentSet.add(candidate)
-        return candidate
+export class IndexDrawPoolManager {
+    /** @type {Map<string, IndexDrawPool>} - Stores mutliple IndexDrawPools by `id` */
+    map
+
+    constructor() { this.map = new Map() }
+
+    /**
+     * Returns an index from 0 to `sourceSize - 1` that is guaranteed to be unique for the last `dontRepeatFor` indexes.
+     * Initializes a new IndexDrawPool identified by `id` if not already present.
+     * 
+     * @param {string} id - Identifier for getting the IndexDrawPool
+     * @param {number} sourceSize - The length of the array to get an index for
+     * @param {number} randomInteger - Random integer greater than 0
+     * @param {number} dontRepeatFor - The amount of consecutive indexes to guarantee uniqueness for (limited by `sourceSize`)
+     * @returns {number} A unique index for the array
+     */
+    nextUniqueIndex(id, sourceSize, randomInteger, dontRepeatFor = 8) {
+        if (!this.map.has(id)) {
+            this.map.set(id, new IndexDrawPool(sourceSize, Math.min(dontRepeatFor, sourceSize-1)))
+        }
+
+        const indexQueue = this.map.get(id)
+        return indexQueue.next(randomInteger)
     }
 }

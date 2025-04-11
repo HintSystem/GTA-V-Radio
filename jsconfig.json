@@ -1,0 +1,9 @@
+{
+    "compilerOptions": {
+      "module": "ES6",
+      "target": "ES2016",
+      "checkJs": true,
+      "allowJs": true
+    }
+  }
+  

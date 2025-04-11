@@ -3,26 +3,26 @@ import { SeededPRNG, IndexDrawPoolManager } from "./utility.js"
 
 const PRNG = new SeededPRNG(1)
 
-/** @typedef { import("./radio").SegmentInfo } SegmentInfo */
-/** @typedef { import("./radio").SyncedSegment } SyncedSegment */
+/** @typedef {import("./types").StationMetadata} StationMetadata */
+/** @typedef {import("./types").SegmentInfo} SegmentInfo */
+/** @typedef {import("./types").SyncedSegment} SyncedSegment */
+/** @typedef {import("./types").StationType} StationType */
+/** @typedef {import("./types").IconType} IconType */
 
-/** @typedef {"dynamic" | "talkshow" | "static"} StationType */
-
-/**
- * Metadata for a radio station
- * @property {string} path - Path to station
- * @property {?Object} meta - Metadata object or null if not yet loaded
- */
+/** Metadata for a radio station */
 export class StationMeta {
-    constructor(path, meta = null) {
-        this.path = path
-        this.meta = meta
+    /** @private @type {?Promise<StationMetadata>} */
+    _metaPromise = null
 
-        /**
-         * @private
-         * @type {?Promise<Object>}
-         */
-        this._metaPromise = null
+    /**
+     * @param {string} path - Path to station
+     * @param {StationMetadata} meta - Metadata object (optional)
+     */
+    constructor(path, meta = null) {
+        /** @type {string} - Path to station */
+        this.path = path
+        /** @type {StationMetadata} - Metadata object or null if not yet loaded */
+        this.meta = meta
     }
 
     /**
@@ -42,6 +42,7 @@ export class StationMeta {
         }
     }
 
+    /** Loads the metadata for this station */
     async loadMeta() {
         if (!this._metaPromise) {
             this._metaPromise = fetch(this.getAbsolutePath("station.json"))
@@ -54,12 +55,13 @@ export class StationMeta {
         return this._metaPromise;
     }
 
+    /** Gets the absolute path for a path relative to station */
     getAbsolutePath(relativePath) {
         return getDataPath() + this.path + "/" + relativePath
     }
 
     /**
-     * Returns a cloned object with a resolved path by turning a relative path into an absolute one, based on the radio station path
+     * Returns a cloned object with a resolved path using `getAbsolutePath`
      * @template {{path: string}} T
      * @param {T} object 
      * @returns {T}
@@ -70,6 +72,11 @@ export class StationMeta {
         return info
     }
 
+    /**
+     * Returns the absolute path for an icon type if it exists
+     * @param {IconType} type
+     * @returns {string|undefined}
+     */
     getIcon(type) {
         if (!this.meta) { return undefined }
 
@@ -78,8 +85,13 @@ export class StationMeta {
         return undefined
     }
 
-    /** Tries to get preffered icon type, defaults to closest alternative otherwise */
+    /**
+     * Tries to get preffered icon type, defaults to closest alternative otherwise
+     * @param {IconType} type
+     * @returns {string|undefined}
+     */
     getPrefferedIcon(type) {
+        /** @type {IconType[]} */
         const priority = ["color", "monochrome", "full"]
 
         let icon = this.getIcon(type)
@@ -143,8 +155,12 @@ export class RadioStation extends StationMeta {
      * @returns {SyncedSegment}
      */
     newSyncedSegment(segmentInfo, accumulatedTime) {
-        const segment = this.resolveObjectPath(segmentInfo)
-        segment.startTimestamp = this.startTimestamp + (accumulatedTime * 1000)
+        /** @type {SyncedSegment} */
+        const segment = {
+            ...this.resolveObjectPath(segmentInfo),
+            startTimestamp: this.startTimestamp + (accumulatedTime * 1000)
+        }
+        delete segment["voiceovers"]
         return segment
     }
 
@@ -156,10 +172,12 @@ export class RadioStation extends StationMeta {
 }
 
 class StaticStation extends RadioStation {
+    /** @type {"static"} */
+    type = "static"
+
     constructor(path, meta) {
         super(path, meta)
         this.segmentIndex = 0
-        this.type = "static"
     }
 
     nextSegment() {
@@ -186,12 +204,14 @@ class StaticStation extends RadioStation {
 }
 
 class TalkshowStation extends RadioStation {
+    /** @type {"talkshow"} */
+    type = "talkshow"
+
     constructor(path, meta) {
         super(path, meta)
         this.segmentIndex = 0
         this.prevSegment = null
         this.indexDrawPools = new IndexDrawPoolManager()
-        this.type = "talkshow"
     }
 
     getTrack() {
@@ -234,11 +254,13 @@ class TalkshowStation extends RadioStation {
 }
 
 class DynamicStation extends RadioStation {
+    /** @type {"dynamic"} */
+    type = "dynamic"
+
     constructor(path, meta) {
         super(path, meta)
         this.prevSegment = null
         this.indexDrawPools = new IndexDrawPoolManager()
-        this.type = "dynamic"
     }
 
     getRandomTrack(randNum) {

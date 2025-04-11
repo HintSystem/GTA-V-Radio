@@ -52,7 +52,7 @@ function getPrevStation() {
     return mod(stationIndex - 1, stationList.length)
 }
 
-/** @type {Object<string, (() => void)[]>} */
+/** @type {Object<string, Array<(() => void)>>} */
 let stationListeners = {}
 
 const staticAudio = new AudioManager({ path: "assets/sfx/RADIO_STATIC_LOOP.wav" }, audio.masterGain)
@@ -96,7 +96,7 @@ function stopStation() {
     stopAudioTracks()
     resetRadioMeta()
 
-    const callbacks = stationListeners[null] || []
+    const callbacks = stationListeners["null"] || []
     callbacks.forEach((callback) => { callback() })
     stationIndex = null
 }
@@ -109,7 +109,7 @@ function clearStationList() {
 
 /**
  * Executes callback when user changes station (before station has finished loading)
- * @param {string} index - Index of the station (from stationList)
+ * @param {number|null} index - Index of the station (from stationList)
  * @param {() => void} callback
  */
 function addStationListener(index, callback) {

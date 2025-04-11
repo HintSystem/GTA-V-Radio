@@ -14,6 +14,7 @@ export const remoteDataPath = "https://raw.githubusercontent.com/RegalTerritory/
 
 let lastUsedPath = localDataPath;
 
+/** @returns {Promise<import("./types").RadioMetadata>} */
 export async function loadRadioMeta() {
     try {
         const localResponse = await fetch(localDataPath + "radio.json")

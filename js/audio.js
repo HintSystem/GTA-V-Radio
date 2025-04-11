@@ -1,11 +1,7 @@
-/**
- * @typedef {Object} AudioInfo
- * @property {string} path - Absolute audio path
- * @property {number?} duration - In seconds
- * @property {number?} audibleDuration - In seconds
- */
-
+// @ts-ignore
 let audioContext = new (window.AudioContext || window.webkitAudioContext)()
+
+/** @typedef {import("./types").AudioInfo} AudioInfo */
 export class AudioManager {
     /** @type {HTMLAudioElement} */
     audio
@@ -17,7 +13,7 @@ export class AudioManager {
     _syncInterval
 
     /**
-     * @param {AudioInfo | HTMLAudioElement} audioInfo
+     * @param {AudioInfo | {path: string, [key: string]: any} | HTMLAudioElement} audioInfo
      * @param {AudioNode?} connection - node to connect to
      * @param {boolean} autoDestroy - when set to True, destroys the audio on end
      */

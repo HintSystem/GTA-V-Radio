@@ -25,7 +25,7 @@
         </div>
 
         <script>
-            fetch("/backgrounds/list.json")
+            fetch("backgrounds/list.json")
                 .then(res => res.json())
                 .then(backgrounds => {
                     const day = Math.floor(Date.now() / (1000 * 60 * 60 * 24))

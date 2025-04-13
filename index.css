@@ -8,7 +8,7 @@ body {
     padding: 0;
     height: 100vh;
     position: static;
-    background-image: url("assets/scenes/cropduster.jpg");
+    background-image: url("backgrounds/cropduster.jpg");
     background-position: center;
     background-size: cover;
     background-repeat: no-repeat;

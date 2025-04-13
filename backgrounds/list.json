@@ -1,0 +1,33 @@
+[
+    {
+        "path": "los_santos_skyline.jpg",
+        "time": "evening"
+    },
+    {
+        "path": "vinewood_sunrise.jpg",
+        "time": "morning"
+    },
+    {
+        "path": "overlooking_the_city.jpg",
+        "time": "morning"
+    },
+    {
+        "path": "alamo_tree.jpg",
+        "time": "morning"
+    },
+    {
+        "path": "cropduster.jpg"
+    },
+    {
+        "path": "lighthouse.jpg"
+    },
+    {
+        "path": "mount_chiliad.png"
+    },
+    {
+        "path": "spring_stream.jpg"
+    },
+    {
+        "path": "castle_in_the_hills.jpg"
+    }
+]

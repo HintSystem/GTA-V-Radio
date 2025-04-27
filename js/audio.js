@@ -1,3 +1,4 @@
+/** @type {AudioContext} */
 // @ts-ignore
 let audioContext = new (window.AudioContext || window.webkitAudioContext)()
 
@@ -38,7 +39,8 @@ export class AudioManager {
 
     stop() { this.audio.pause(); this.audio.currentTime = 0 }
 
-    play() { this.audio.currentTime = 0; this.audio.play() }
+    /** @param {number} startTime */
+    play(startTime = 0) { this.audio.currentTime = startTime; this.audio.play() }
 
     get isBuffering() { return this.audio.readyState < 4 && !this.audio.paused }
 
@@ -124,18 +126,135 @@ export class AudioManager {
 }
 
 const masterGain = audioContext.createGain()
-masterGain.gain.value = 0.5
+masterGain.gain.value = 0.6
 masterGain.connect(audioContext.destination)
 
+const musicGain = audioContext.createGain()
+musicGain.gain.value = 0.8
+musicGain.connect(masterGain)
+
+const speechGain = audioContext.createGain()
+speechGain.gain.value = 0.8
+speechGain.connect(masterGain)
+
+const sfxGain = audioContext.createGain()
+sfxGain.gain.value = 0.6
+sfxGain.connect(masterGain)
+
+// for transitions
 const trackGain = audioContext.createGain()
-trackGain.connect(masterGain)
+trackGain.connect(musicGain)
 
 /** @type {?AudioManager} */
 export let MainTrack = null
 /** @type {?AudioManager} */
 export let VoiceOverTrack = null
 
+function randomPitchVariance(maxSemitones = 2) {
+    const semitoneShift = (Math.random() * 2 - 1) * maxSemitones;
+    return Math.pow(2, semitoneShift / 12);
+}
+
+function applyLowPassFilter(samples, cutoffFreq, sampleRate, poles = 1) {
+    const RC = 1.0 / (cutoffFreq * 2 * Math.PI);
+    const dt = 1.0 / sampleRate;
+    const alpha = dt / (RC + dt);
+
+    for (let p = 0; p < poles; p++) {
+        let previous = 0;
+        for (let i = 0; i < samples.length; i++) {
+            samples[i] = previous = previous + (alpha * (samples[i] - previous));
+        }
+    }
+}
+
+export const RetuneSound = {
+    /** @type {AudioBuffer} */
+    retunePositioned: null,
+    /** @type {AudioManager} */
+    staticLoop: null,
+    /** @type {Array<AudioManager>} */
+    blips: [],
+    timeoutId: null,
+
+    init() {
+        this.retunePositioned = this.createRetunePositionedSound()
+        this.staticLoop = new AudioManager({ path: "assets/sfx/RADIO_STATIC_LOOP.wav" }, sfxGain)
+        this.staticLoop.audio.volume = 0.5
+        this.staticLoop.audio.loop = true
+
+        this.blips = []
+        for (let i = 1; i <= 16; i++) {
+            if (i === 3) continue
+            const blipSound = new AudioManager({ path: `assets/sfx/BLIP_${i}.wav` }, sfxGain)
+            blipSound.audio.volume = 0.38
+            this.blips.push(blipSound)
+        }
+    },
+
+    /** Synthesizes the audio buffer for the retune positioned sound, because it's a synth sound in the game */
+    createRetunePositionedSound() {
+        const duration = 0.2
+        const sampleRate = audioContext.sampleRate
+        const length = duration * sampleRate
+        const buffer = audioContext.createBuffer(1, length, sampleRate)
+        const data = buffer.getChannelData(0)
+    
+        const frequency = 2600
+        const volume = 0.8
+    
+        for (let i = 0; i < length; i++) {
+            const time = i / sampleRate
+            const square = Math.sign(Math.sin(2 * Math.PI * frequency * time)) // Square wave
+    
+            // Exponential envelope
+            let envelope = 1;
+            if (time < 0.03) {
+                envelope = Math.pow(time / 0.03, 1); // Attack
+            } else if (time < 0.0555) {
+                envelope = Math.pow(1 - ((time - 0.03) / 0.0255), 1); // Decay
+            } else {
+                envelope = 0;
+            }
+    
+            data[i] = square * envelope * volume;
+        }
+
+        // Apply low-pass filtering to the buffer
+        applyLowPassFilter(data, 7800, sampleRate, 3); // 7800 Hz cutoff, 3 poles
+        return buffer
+    },    
+
+    start() {
+        const source = audioContext.createBufferSource()
+        source.buffer = this.retunePositioned
+        source.connect(sfxGain)
+        source.start()
+
+        this.staticLoop.play(Math.random() * 5)
+
+        const blipLoop = () => {
+            const chosenBlip = this.blips[Math.floor(Math.random() * this.blips.length)]
+            chosenBlip.audio.playbackRate = randomPitchVariance()
+            chosenBlip.play()
+            this.timeoutId = setTimeout(blipLoop, 15 + (Math.random() * 500))
+        }
+
+        blipLoop()
+    },
+
+    stop() {
+        if (this.staticLoop) { this.staticLoop.stop() }
+        if (this.timeoutId !== null) {
+            clearTimeout(this.timeoutId)
+            this.timeoutId = null
+        }
+    }
+}
+RetuneSound.init()
+
 export function stopAudioTracks() {
+    RetuneSound.stop()
     if (MainTrack) { MainTrack.destroy() }
     if (VoiceOverTrack) { VoiceOverTrack.destroy() }
 }
@@ -148,7 +267,7 @@ export function playSegment(segment) {
     MainTrack.playSynced(segment.startTimestamp)
 
     if (segment.voiceOver) {
-        VoiceOverTrack = new AudioManager(segment.voiceOver, masterGain, true)
+        VoiceOverTrack = new AudioManager(segment.voiceOver, speechGain, true)
 
         VoiceOverTrack.audio.addEventListener("ended", () => {
             trackGain.gain.linearRampToValueAtTime(1, audioContext.currentTime + 2)
@@ -160,4 +279,4 @@ export function playSegment(segment) {
     }
 }
 
-export default { context: audioContext, masterGain, trackGain }
+export default { context: audioContext, masterGain, speechGain, sfxGain }

@@ -1,6 +1,6 @@
 import { radioMeta, pageIcon } from "./constants.js"
 import { StationMeta, RadioStation } from "./radio.js"
-import audio, { AudioManager, MainTrack, playSegment, stopAudioTracks } from "./audio.js"
+import audio, { MainTrack, playSegment, stopAudioTracks, RetuneSound } from "./audio.js"
 
 /** @type {?RadioStation} */
 let station = null
@@ -55,20 +55,18 @@ function getPrevStation() {
 /** @type {Object<string, Array<(() => void)>>} */
 let stationListeners = {}
 
-const staticAudio = new AudioManager({ path: "assets/sfx/RADIO_STATIC_LOOP.wav" }, audio.masterGain)
-
 /** Syncs audio tracks to currently loaded radio station */
 function syncToStation() {
     stopAudioTracks()
     audio.context.resume()
     
-    staticAudio.play()
+    RetuneSound.start()
     
     const syncedSegment = station.getSyncedSegment()
     playSegment(syncedSegment)
     console.log(syncedSegment)
     
-    MainTrack.audio.addEventListener("canplay", () => { staticAudio.stop() })
+    MainTrack.audio.addEventListener("canplay", () => { RetuneSound.stop() })
     
     MainTrack.onAudibleEnd(onSegmentEnd)
 }

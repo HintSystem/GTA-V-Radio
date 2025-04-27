@@ -24,9 +24,9 @@
      inkscape:pagecheckerboard="0"
      inkscape:deskcolor="#262626"
      inkscape:document-units="px"
-     inkscape:zoom="0.77246095"
-     inkscape:cx="1295.8584"
-     inkscape:cy="271.21112"
+     inkscape:zoom="0.54621238"
+     inkscape:cx="1232.1215"
+     inkscape:cy="-19.223292"
      inkscape:window-width="1920"
      inkscape:window-height="1009"
      inkscape:window-x="-8"
@@ -48,7 +48,10 @@
        id="page76"
        margin="0"
        bleed="0"
-       inkscape:label="Final" /></sodipodi:namedview><defs
+       inkscape:label="Final"
+       inkscape:export-filename="banner.png"
+       inkscape:export-xdpi="96"
+       inkscape:export-ydpi="96" /></sodipodi:namedview><defs
      id="defs1"><linearGradient
        id="swatch9"
        inkscape:swatch="solid"><stop

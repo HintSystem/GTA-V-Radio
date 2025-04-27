@@ -3,10 +3,15 @@
     src: url('assets/Pricedown\ Bl.otf');
 }
 
+:root {
+    overscroll-behavior: none;
+    overflow-x: hidden;
+}
+
 body {
     margin: 0;
     padding: 0;
-    height: 100vh;
+    min-height: 100vh;
     position: static;
     background-image: url("backgrounds/cropduster.jpg");
     background-position: center;
@@ -31,19 +36,11 @@ body {
     user-select: none;
     display: flex;
     align-items: center;
-    margin-bottom: min(4rem, 5.6vw);
-
-    img { height: 10rem; }
-    span {
-        font-family: 'Pricedown';
-        font-size: 3.5rem;
-        margin-left: 0.85rem;
-        text-shadow: 
-            -3px -3px 0 black,  
-            3px -3px 0 black,
-            -3px  3px 0 black,
-            3px  3px 0 black;
+    @media (min-width: 800px) {
+        margin-bottom: 4rem;
     }
+
+    img { width: min(30rem, 95vw); max-width: 1028px; }
 }
 
 .container {
@@ -57,9 +54,8 @@ body {
     display: flex;
     flex-wrap: wrap;
     justify-content: center;
-    gap: 0.5rem;
-    width: calc(100vw - 0.6rem);
-    margin-bottom: 1rem;
+    gap: min(0.45rem, 2vw);
+    width: 100vw;
 
     label {
         cursor: pointer;
@@ -72,9 +68,10 @@ body {
 
             box-sizing: border-box;
             margin: 0;
-            padding: 0.5rem;
+            padding: 8%;
+            width: auto;
             height: min(22vw, 6rem);
-            width: min(22vw, 6rem);
+            aspect-ratio: 1/1;
         }
 
         input:checked + span {

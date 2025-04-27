@@ -1,5 +1,7 @@
-# folder containing audio
+# folder containing radio station data
 /data
+# folder containing radio station game dumps
+/dataDumps
 
 # testing scripts
 /scripts

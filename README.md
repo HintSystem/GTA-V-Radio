@@ -1,6 +1,6 @@
 <div align="center">
 
-[<img src="banner.png" alt="Gta V Radio" height="256">][site_url]
+[<img src="banner.png" alt="Gta V Radio" width="512">][site_url]
 
 [![Github pages][github_pages_badge]][site_url]
 

@@ -8,6 +8,8 @@ export class AudioManager {
     audio
     /** @type {MediaElementAudioSourceNode} */
     source
+    /** @type {() => void} - Callback that executes when destroy() is called */
+    onDestroy
     /** @private @type {() => void} */
     _onSync
     /** @private @type {number} */
@@ -111,17 +113,18 @@ export class AudioManager {
             clearInterval(this._syncInterval)
             this._syncInterval = null
         }
-
+        
         if (this.audio) {
             this.stop()
             this.audio.removeAttribute("src")
             this.audio.load()
         }
-
+        
         if (this.source) {
             this.source.disconnect()
             this.source = null
         }
+        if (this.onDestroy) { this.onDestroy() }
     }
 }
 
@@ -148,7 +151,7 @@ trackGain.connect(musicGain)
 /** @type {?AudioManager} */
 export let MainTrack = null
 /** @type {?AudioManager} */
-export let VoiceOverTrack = null
+export let VoiceoverTrack = null
 
 function randomPitchVariance(maxSemitones = 2) {
     const semitoneShift = (Math.random() * 2 - 1) * maxSemitones;
@@ -253,10 +256,16 @@ export const RetuneSound = {
 }
 RetuneSound.init()
 
+let voiceoverQueue = []
 export function stopAudioTracks() {
+    voiceoverQueue = []
+
     RetuneSound.stop()
     if (MainTrack) { MainTrack.destroy() }
-    if (VoiceOverTrack) { VoiceOverTrack.destroy() }
+    if (VoiceoverTrack) { VoiceoverTrack.destroy() }
+
+    trackGain.gain.cancelScheduledValues(audioContext.currentTime)
+    trackGain.gain.value = 1
 }
 
 /**
@@ -266,17 +275,34 @@ export function playSegment(segment) {
     MainTrack = new AudioManager(segment, trackGain, true)
     MainTrack.playSynced(segment.startTimestamp)
 
-    if (segment.voiceOver) {
-        VoiceOverTrack = new AudioManager(segment.voiceOver, speechGain, true)
-
-        VoiceOverTrack.audio.addEventListener("ended", () => {
-            trackGain.gain.linearRampToValueAtTime(1, audioContext.currentTime + 2)
-        })
-        MainTrack.setTimeout(() => {
-            trackGain.gain.linearRampToValueAtTime(0.4, audioContext.currentTime + 2)
-            VoiceOverTrack.play()
-        }, 5)
+    for (const voiceover of segment.voiceovers || []) {
+        voiceoverQueue.push(voiceover)
     }
+
+    /** @param {import("./types").VoiceoverInfo} voiceover */
+    async function playVoiceover(voiceover) {
+        return new Promise((resolve) => {
+            VoiceoverTrack = new AudioManager(voiceover, speechGain, true)
+            VoiceoverTrack.onDestroy = () => { resolve() }
+
+            VoiceoverTrack.audio.addEventListener("ended", () => {
+                trackGain.gain.linearRampToValueAtTime(1, audioContext.currentTime + 2)
+            })
+
+            MainTrack.setTimeout(() => {
+                trackGain.gain.linearRampToValueAtTime(0.4, audioContext.currentTime + 2)
+                VoiceoverTrack.play()
+            }, voiceover.offset)
+        })
+    }
+
+    async function processVoiceoverQueue() {
+        while (voiceoverQueue.length > 0) {
+            const voiceover = voiceoverQueue.shift()
+            await playVoiceover(voiceover)
+        }
+    }
+    processVoiceoverQueue()
 }
 
 export default { context: audioContext, masterGain, speechGain, sfxGain }

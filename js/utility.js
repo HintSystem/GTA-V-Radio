@@ -1,4 +1,5 @@
 export class SeededPRNG {
+    /** @param {number} seed */
     constructor(seed) {
         /** @type {number} - Equal seed values will deterministically generate the same set of pseudo random numbers */
         this.seed = seed
@@ -35,6 +36,13 @@ export class SeededPRNG {
      * @returns {number}
      */
     toFloat(number) { return number / 0xFFFFFFFF }
+
+    /** Returns a cloned copy of the instance */
+    clone() {
+        const cloned = new SeededPRNG(this.seed);
+        cloned.index = this.index;
+        return cloned;
+    }
 }
 
 /** Draw pool for selecting random indexes while also avoiding repetitiveness */
@@ -71,6 +79,15 @@ class IndexDrawPool {
 
         return selected
     }
+
+    /** Returns a cloned copy of the instance */
+    clone() {
+        const cloned = new IndexDrawPool(0, this.dontRepeatFor);
+        cloned.draw = [...this.draw];
+        cloned.discard = [...this.discard];
+
+        return cloned;
+    }
 }
 
 export class IndexDrawPoolManager {
@@ -96,5 +113,14 @@ export class IndexDrawPoolManager {
 
         const indexQueue = this.map.get(id)
         return indexQueue.next(randomInteger)
+    }
+
+    /** Returns a cloned copy of the instance */
+    clone() {
+        const cloned = new IndexDrawPoolManager();
+        for (const [id, pool] of this.map.entries()) {
+            cloned.map.set(id, pool.clone());
+        }
+        return cloned;
     }
 }

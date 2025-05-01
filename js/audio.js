@@ -2,47 +2,64 @@
 // @ts-ignore
 let audioContext = new (window.AudioContext || window.webkitAudioContext)()
 
+const AUDIO_DESYNC_THRESHOLD = 140 // Firefox fingerprint protection can reduce time precision to 100m so have to take that into consideration
+const AUDIO_SYNC_INTERVAL = 8000
+
+const DUCK_RAMP_PREEMPT_TIME = 2 // AudioContext sometimes fails to work when scheduling value changes right away so some buffer time is required
+
 /** @typedef {import("./types").AudioInfo} AudioInfo */
 export class AudioManager {
     /** @type {HTMLAudioElement} */
     audio
     /** @type {MediaElementAudioSourceNode} */
     source
-    /** @type {() => void} - Callback that executes when destroy() is called */
+    /** @type {() => void} */
     onDestroy
     /** @private @type {() => void} */
     _onSync
     /** @private @type {number} */
     _syncInterval
+    /** @private @type {boolean} */
+    _connected = false
 
     /**
-     * @param {AudioInfo | {path: string, [key: string]: any} | HTMLAudioElement} audioInfo
-     * @param {AudioNode?} connection - node to connect to
-     * @param {boolean} autoDestroy - when set to True, destroys the audio on end
+     * @param {AudioInfo | {path: string, [key: string]: any}} audioInfo
+     * @param {AudioNode?} connection - Node to connect to
+     * @param {boolean} autoDestroy - When set to true, destroys audio on end
      */
     constructor(audioInfo, connection = null, autoDestroy = false) {
-        if (audioInfo instanceof HTMLAudioElement) {
-            this.audio = audioInfo
-        } else {
-            this.info = audioInfo
-            this.audio = new Audio(this.info.path)
-        }
+        /** @type {AudioNode?} */
+        this.connection = connection
+
+        this.info = audioInfo
+        this.audio = new Audio(this.info.path)
 
         this.audio.crossOrigin = "anonymous"
-        this.source = audioContext.createMediaElementSource(this.audio)
-        
-        if (connection) { this.source.connect(connection) }
         if (autoDestroy) { this.audio.addEventListener("ended", () => this.destroy()) }
     }
 
-    resume() { this.audio.play(); }
+    /** @private */
+    _ensureConnected() {
+        if (!this.source) { this.source = audioContext.createMediaElementSource(this.audio) }
+
+        if (!this._connected && this.connection) {
+            this.source.connect(this.connection)
+            this._connected = true
+        }
+    }
+
+    resume() { this._ensureConnected(); this.audio.play(); }
 
     pause() { this.audio.pause() }
 
     stop() { this.audio.pause(); this.audio.currentTime = 0 }
 
     /** @param {number} startTime */
-    play(startTime = 0) { this.audio.currentTime = startTime; this.audio.play() }
+    play(startTime = 0) {
+        this._ensureConnected()
+        this.audio.currentTime = startTime
+        this.audio.play()
+    }
 
     get isBuffering() { return this.audio.readyState < 4 && !this.audio.paused }
 
@@ -51,37 +68,35 @@ export class AudioManager {
      * @param {number} timestamp - UTC time (in milliseconds) representing when the audio originally started
      */
     playSynced (timestamp) {
-        if (this._onSync) {
-            this.audio.removeEventListener("playing", this._onSync)
-            this._onSync = null
-        }
-        if (this._syncInterval) {
-            clearInterval(this._syncInterval)
-            this._syncInterval = null
-        }
+        this._cleanupSync()
 
         if (timestamp) {
             this._onSync = () => {
-                const audioTime = (Date.now() - timestamp) / 1000
-                const desync = audioTime - this.audio.currentTime
-                const desyncThreshold = 0.8
+                const audioTime = (Date.now() - timestamp)
+                const desync = audioTime - (this.audio.currentTime * 1000)
 
-                if (this.audio.currentTime > 0.1) { console.log(`audio desync: ${desync}, time: ${this.audio.currentTime}, '${this.info.path}'`, ) }
-                if (desync > desyncThreshold) { this.audio.currentTime = audioTime }
+                if (this.audio.currentTime > 0) { console.log(`Desync: ${Math.floor(desync)}ms`) }
+                if (Math.abs(desync) > AUDIO_DESYNC_THRESHOLD) {
+                    console.log(`Jump to sync`)
+                    this.audio.currentTime = (audioTime / 1000)
+                    return
+                }
             }
+
             this._onSync()
             this._syncInterval = setInterval(() => {
                 if (!this.isBuffering) { this._onSync() }
-            }, 8000)
-            this.audio.addEventListener("playing", this._onSync)
+            }, AUDIO_SYNC_INTERVAL)
+
+            this.audio.addEventListener("canplay", this._onSync)
         }
-        this.audio.play()
+        this.resume()
     }
 
     /**
-     * Executes callback until audio has reached the time defined in delay
+     * Executes callback once audio time reaches delay
      * @param {() => void} callback
-     * @param {number} delay - amount of time to wait in seconds
+     * @param {number} delay - Delay (in seconds)
      */
     setTimeout(callback, delay) {
         if (this.audio.currentTime > delay) { return }
@@ -94,6 +109,33 @@ export class AudioManager {
         };
 
         this.audio.addEventListener('timeupdate', onTimeUpdate)
+    }
+    /**
+     * Schedules a ducking ramp to be executed ahead of time
+     * @param {GainNode} gainNode 
+     * @param {number} startTime 
+     * @param {number} rampDuration 
+     * @param {number} startGain 
+     * @param {number} endGain
+     * @returns {boolean} True if ramp was successful, false if ramp was skipped
+     */
+    scheduleDuckingRamp(gainNode, startTime, rampDuration, startGain, endGain) {
+        const audioTime = this.audio.currentTime
+
+        // Ramp has not started - schedule fully
+        if (audioTime < startTime) {
+            const preemptMax = (startTime - audioTime - 0.1)
+            const preemptTime = Math.min(DUCK_RAMP_PREEMPT_TIME, preemptMax)
+
+            this.setTimeout(() => {
+                gainNode.gain.setValueCurveAtTime([startGain, endGain], audioContext.currentTime + preemptTime, rampDuration)
+            }, startTime - preemptTime)
+            return true
+        }
+
+        // Ramp finished or midway - set final value
+        gainNode.gain.value = endGain
+        return false
     }
 
     /**
@@ -108,14 +150,23 @@ export class AudioManager {
         }
     }
 
-    destroy() {
+    /** @private */
+    _cleanupSync() {
+        if (this._onSync) {
+            this.audio.removeEventListener("canplay", this._onSync)
+            this._onSync = null
+        }
         if (this._syncInterval) {
             clearInterval(this._syncInterval)
             this._syncInterval = null
         }
+    }
+
+    destroy() {
+        this._cleanupSync()
         
         if (this.audio) {
-            this.stop()
+            this.audio.pause()
             this.audio.removeAttribute("src")
             this.audio.load()
         }
@@ -144,7 +195,7 @@ const sfxGain = audioContext.createGain()
 sfxGain.gain.value = 0.6
 sfxGain.connect(masterGain)
 
-// for transitions
+// For voiceover ducking
 const trackGain = audioContext.createGain()
 trackGain.connect(musicGain)
 
@@ -268,31 +319,40 @@ export function stopAudioTracks() {
     trackGain.gain.value = 1
 }
 
-/**
- * @param {import("./radio").SyncedSegment} segment 
- */
+const VOICEOVER_DUCK_RAMP_DURATION = 0.8
+const VOICEOVER_DUCK_RAMP_POSITION = 0.5
+const VOICEOVER_DUCK_GAIN = 0.4
+
+/** @param {import("./radio").PlayableSegment} segment */
 export function playSegment(segment) {
-    MainTrack = new AudioManager(segment, trackGain, true)
+    MainTrack = new AudioManager(segment.info, trackGain, true)
     MainTrack.playSynced(segment.startTimestamp)
 
     for (const voiceover of segment.voiceovers || []) {
-        voiceoverQueue.push(voiceover)
+        voiceoverQueue.push(new AudioManager(voiceover, speechGain, true)) // Preload voiceovers
     }
 
-    /** @param {import("./types").VoiceoverInfo} voiceover */
+    /** @param {AudioManager & {info: import("./types").VoiceoverInfo}} voiceover */
     async function playVoiceover(voiceover) {
         return new Promise((resolve) => {
-            VoiceoverTrack = new AudioManager(voiceover, speechGain, true)
+            VoiceoverTrack = voiceover
             VoiceoverTrack.onDestroy = () => { resolve() }
 
-            VoiceoverTrack.audio.addEventListener("ended", () => {
-                trackGain.gain.linearRampToValueAtTime(1, audioContext.currentTime + 2)
-            })
+            if (MainTrack.audio.currentTime > voiceover.info.offset) {
+                resolve()
+                return
+            }
 
             MainTrack.setTimeout(() => {
-                trackGain.gain.linearRampToValueAtTime(0.4, audioContext.currentTime + 2)
                 VoiceoverTrack.play()
-            }, voiceover.offset)
+            }, voiceover.info.offset)
+            
+            const positionOffset = (VOICEOVER_DUCK_RAMP_DURATION * VOICEOVER_DUCK_RAMP_POSITION)
+            const voiceoverStart = voiceover.info.offset - positionOffset
+            const voiceoverEnd = voiceover.info.duration - positionOffset
+            console.log(voiceover.info.offset, voiceoverStart)
+            MainTrack.scheduleDuckingRamp(trackGain, voiceoverStart, VOICEOVER_DUCK_RAMP_DURATION, 1, VOICEOVER_DUCK_GAIN)
+            VoiceoverTrack.scheduleDuckingRamp(trackGain, voiceoverEnd, VOICEOVER_DUCK_RAMP_DURATION, VOICEOVER_DUCK_GAIN, 1)
         })
     }
 

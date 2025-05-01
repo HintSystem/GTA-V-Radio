@@ -62,9 +62,11 @@ function syncToStation() {
     
     RetuneSound.start()
     
+    const time = performance.now()
     const syncedSegment = station.getSyncedSegment()
-    playSegment(syncedSegment)
+    console.log(`Syncing to station took: ${performance.now() - time}ms`)
     console.log(syncedSegment)
+    playSegment(syncedSegment)
     
     MainTrack.audio.addEventListener("canplay", () => { RetuneSound.stop() })
     

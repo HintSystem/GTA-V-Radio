@@ -24,14 +24,6 @@ export interface VoiceoverInfo extends AudioInfo {
   offset: number
 }
 
-export interface SyncedSegment extends AudioInfo {
-  /** UTC time (in milliseconds) representing when the segment started playing */
-  startTimestamp: number
-  /** Chosen speeches for track, if any */
-  voiceovers?: VoiceoverInfo[]
-  category: number
-}
-
 export type StationType = "dynamic" | "talkshow" | "static"
 export type IconType = "color" | "monochrome" | "full" | "cover"
 

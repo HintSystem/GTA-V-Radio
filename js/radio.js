@@ -1,18 +1,37 @@
 import { getDataPath } from "./constants.js"
 import { SeededPRNG, IndexDrawPoolManager } from "./utility.js"
 
-// Segment categories
-const CAT_ADVERTS = 0
-const CAT_IDENTS = 1
-const CAT_MUSIC = 2
-const CAT_NEWS = 3
-const CAT_DJSOLO = 5
+/**
+ * @typedef {number} SegmentCategory
+ * @readonly
+ * @enum {number}
+ */
+const CAT = {
+    ADVERTS: 0,
+    IDENTS: 1,
+    MUSIC: 2,
+    NEWS: 3,
+    DJSOLO: 5
+}
+
+/** @param {SegmentCategory} categoryValue */
+function getCategoryId(categoryValue) {
+    switch (categoryValue) {
+        case CAT.ADVERTS:
+            return "advert"
+        case CAT.IDENTS:
+            return "id"
+        case CAT.MUSIC:
+            return "track"
+        case CAT.DJSOLO:
+            return "mono_solo"
+    }
+}
 
 const DEFAULT_DJ_SPEECH_OFFSET_MS = 4000
 
 /** @typedef {import("./types").StationMetadata} StationMetadata */
 /** @typedef {import("./types").SegmentInfo} SegmentInfo */
-/** @typedef {import("./types").SyncedSegment} SyncedSegment */
 /** @typedef {import("./types").StationType} StationType */
 /** @typedef {import("./types").IconType} IconType */
 
@@ -59,7 +78,7 @@ export class StationMeta {
                     console.error(`Failed to load "${this.path}" metadata:`, err)
                 })
         }
-        return this._metaPromise;
+        return this._metaPromise
     }
 
     /** Gets the absolute path for a path relative to station */
@@ -114,27 +133,63 @@ export class StationMeta {
     }
 }
 
+export class PlayableSegment {
+    /**
+     * @param {SegmentInfo} segmentInfo 
+     * @param {number} startTimestamp 
+     */
+    constructor(segmentInfo, startTimestamp) {
+        /** @readonly @type {SegmentInfo} */
+        this.info = segmentInfo
+        /** @type {SegmentCategory} */
+        this.category = segmentInfo.category || CAT.MUSIC
+        /** @type {import("./types").VoiceoverInfo[]} - Chosen speeches for track, if any */
+        this.voiceovers = []
+        /** @type {number} - UTC time (in milliseconds) representing when the segment started playing */
+        this.startTimestamp = startTimestamp
+    }
+
+    getSpeechWindows() {
+        /** @type {import("./types").DJMarker[]} */
+        const djMarkers = this.info?.markers?.dj || []
+        const intro = {}
+        const outro = {}
+        for (const marker of djMarkers) {
+            if (marker.value == "intro_start") {
+                intro.start = marker.offset
+            } else if (marker.value == "intro_end") {
+                intro.end = marker.offset
+            } else if (marker.value == "outro_start") {
+                outro.start = marker.offset
+            } else if (marker.value == "outro_end") {
+                outro.end = marker.offset
+            }
+        }
+        return {intro, outro}
+    }
+}
+
 /**
  * Class that describes what a radio station must implement
  * @abstract
  * @extends {StationMeta} 
  */
 export class RadioStation extends StationMeta {
-    /** @type {StationType} */
+    /** @readonly @type {StationType} */
     type
-    /** @type {number} */
-    peekDepth = 0
     /** @type {number} - The amount of time that has passed since the first track of the radio station played (required for getting a synced segment) */
     accumulatedTime
     /** @type {number} - Current segment index */
     segmentIndex
     /** @type {number} - Current track index */
     trackIndex
-    /** @private @type {number} */
-    _historyLimit = 2
     /** @type {SegmentInfo[]} */
     segmentHistory
-
+    /** @private @type {number} */
+    _historyLimit = 2
+    /** @type {number} */
+    prngIndexReserve = 2
+    
     /**
      * UTC time (in milliseconds) when the radio station playback sync was reset (resets every month)
      * @type {number}
@@ -187,15 +242,42 @@ export class RadioStation extends StationMeta {
             cloned.indexDrawPools = this.indexDrawPools.clone()
         }
         
-        return cloned;
+        return cloned
     }
-    
+
+    /**
+     * Resolves details for playable segments.
+     * 
+     * Stations may implement this to customize playback transitions—typically by using `peekSegment()` 
+     * to access upcoming or previous segments. For example, this can be used to add a voiceover 
+     * that references the next track.
+     *
+     * @abstract
+     * @protected
+     * @param {PlayableSegment} playableSegment
+     */
+    impl_resolveSegment(playableSegment) {}
+
+    /**
+     * Retrieves information about the next segment to be played.
+     * 
+     * This method must be implemented by station subclasses to return the next `SegmentInfo` 
+     * in the playback queue.
+     * 
+     * **IMPORTANT**: Do not use `peekSegment()` to access future segments within this method, as it *will* 
+     * result in infinite recursion. `peekSegment()` may only be used to inspect **past segments**, 
+     * and must respect the defined `historyLimit`.
+     *
+     * @abstract
+     * @protected
+     * @returns {SegmentInfo} The next segment to be played.
+     */
+    impl_nextSegment() { throw new Error("Method 'nextSegment()' must be implemented.") }
+
     /**
      * Returns a segment from the station playlist relative to the current segment index.
      *
      * If the segment is not available in history, it simulates playback from the start to reconstruct it.
-     * 
-     * **Important:** RadioStation class implementations must ensure `historyLimit` is respected and `peekDepth` is being tracked to avoid infinite recursion.
      *
      * @param {number} segmentOffset
      *  + Positive for upcoming segments,
@@ -214,211 +296,214 @@ export class RadioStation extends StationMeta {
                 return this.segmentHistory[historyIndex]
             }
 
+            // Reset station state and simulate tracks from beginning
             const simulatedStation = this.clone(false)
             simulatedStation.resetState()
     
             let segment = null
-            for (let i = 0; i <= targetIndex; i++) { segment = simulatedStation.nextSegment() }
+            for (let i = 0; i <= targetIndex; i++) {
+                segment = simulatedStation._nextSegmentInfo()
+            }
             return segment
-            
         }
 
+        // Clone station state and continue simulating tracks ahead
         const simulatedStation = this.clone()
-        simulatedStation.peekDepth += 1
 
         let segment = null
-        for (let i = 0; i < segmentOffset; i++) { segment = simulatedStation.nextSegment() }
+        for (let i = 0; i < segmentOffset; i++) {
+            segment = simulatedStation._nextSegmentInfo()
+        }
         return segment
     }
 
     /**
-     * Retrieves the next segment to play.
+     * Retrieves information about the next segment.
      *
-     * This method also has side effects, such as incrementing `accumulatedTime`,
-     * and modifying other internal state properties depending on the implementation. 
+     * This method affects station state, such as incrementing `accumulatedTime`,
+     * and modifying other internal state properties.
      *
-     * @abstract
-     * @returns {SyncedSegment} The next segment to be played.
+     * @returns {PlayableSegment} The next segment to be played.
      */
-    nextSegment() { throw new Error("Method 'nextSegment()' must be implemented.") }
+    nextSegment() {
+        return this._nextSegmentInfo((segmentInfo) => {
+            return this._newPlayableSegment(segmentInfo)
+        })
+    }
 
     /**
      * Retrieves the segment that is currently synced to time.
      * 
-     * This method also has side effects, such as incrementing `accumulatedTime`,
-     * and modifying other internal state properties depending on the implementation.
+     * This method affects station state, such as incrementing `accumulatedTime`,
+     * and modifying other internal state properties.
      * 
-     * @returns {SyncedSegment}
+     * @returns {PlayableSegment}
      */
     getSyncedSegment() {
         this.resetState()
         
         const start = this.startTimestamp
         while (true) {
-            const segment = this.nextSegment()
-            const time = start + (this.accumulatedTime * 1000)
+            const segment = this._nextSegmentInfo((segmentInfo) => {
+                const segmentDuration = segmentInfo.audibleDuration || segmentInfo.duration
+                const time = start + ((this.accumulatedTime + segmentDuration) * 1000)
 
-            if (time > Date.now()) { return segment }
+                if (time > Date.now()) { return this._newPlayableSegment(segmentInfo) }
+                return null
+            })
+    
+            if (segment) { return segment }
         }
     }
 
-    /**
-     * Creates a new segment with a resolved path and startTimestamp
-     * @param {SegmentInfo} segmentInfo
-     * @returns {SyncedSegment}
+    /** 
+     * @private
+     * @overload
+     * @returns {SegmentInfo}
      */
-    newSyncedSegment(segmentInfo) {
-        /** @type {SyncedSegment} */
-        const segment = {
-            ...this.resolveObjectPath(segmentInfo),
-            startTimestamp: this.startTimestamp + (this.accumulatedTime * 1000)
-        }
-        delete segment["attachments"]
-        delete segment["markers"]
-        return segment
+    /** 
+     * @private
+     * @template T
+     * @overload
+     * @param {((segmentInfo: SegmentInfo) => T)} onBeforeRegister - Optional callback executed after generating `SegmentInfo` but before registering it. If provided, the callback's return value is returned.
+     * @returns {T}
+     */
+    _nextSegmentInfo(onBeforeRegister = null) {
+        const segmentInfo = this.impl_nextSegment()
+        const nextIndex = this.PRNG.index + this.prngIndexReserve // Reserve some prng indexes for impl_resolveSegmentTransition to prevent drift
+
+        const returns = onBeforeRegister ? onBeforeRegister(segmentInfo) : null
+
+        this.PRNG.index = nextIndex
+        this._registerSegment(segmentInfo)
+
+        return onBeforeRegister ? returns : segmentInfo
     }
 
     /**
-     * Registers segment info into history, updates state and returns a synced segment
+     * Creates a new playable segment with a resolved path, startTimestamp and voiceovers
+     * @private
      * @param {SegmentInfo} segmentInfo
-     * @returns {SyncedSegment}
+     * @returns {PlayableSegment}
      */
-    registerSegment(segmentInfo) {
+    _newPlayableSegment(segmentInfo) {
+        const segment = this.resolveObjectPath(segmentInfo)
+
+        const playableSegment = new PlayableSegment(segment, this.startTimestamp + (this.accumulatedTime * 1000))
+        this.impl_resolveSegment(playableSegment)
+        return playableSegment
+    }
+
+    /**
+     * Registers segment info into history and updates station state
+     * @private
+     * @param {SegmentInfo} segmentInfo
+     */
+    _registerSegment(segmentInfo) {
         this.segmentHistory.unshift(segmentInfo)
         if (this.segmentHistory.length > this._historyLimit) {
             this.segmentHistory.length = this._historyLimit
         }
 
-        const syncedSegment = this.newSyncedSegment(segmentInfo) // must run before adding to accumulatedTime for correct timestamp
-
-        if (segmentInfo.category == CAT_MUSIC) { this.trackIndex++ }
+        if (segmentInfo.category == CAT.MUSIC) { this.trackIndex++ }
         this.segmentIndex++
         this.accumulatedTime += segmentInfo.audibleDuration || segmentInfo.duration
-        return syncedSegment
-    }
-}
-
-/** @param {number} categoryNum */
-function getCategoryId(categoryNum) {
-    switch (categoryNum) {
-        case CAT_ADVERTS:
-            return "advert"
-        case CAT_IDENTS:
-            return "id"
-        case CAT_MUSIC:
-            return "track"
-        case CAT_DJSOLO:
-            return "mono_solo"
     }
 }
 
 class StaticStation extends RadioStation {
-    /** @type {"static"} */
+    /** @readonly @type {"static"} */
     type = "static"
+    prngIndexReserve = 0
 
-    nextSegment() {
+    impl_nextSegment() {
         const segmentList = this.meta.fileGroups.track
-        return this.registerSegment(segmentList[this.segmentIndex % segmentList.length])
+        return segmentList[this.segmentIndex % segmentList.length]
     }
 }
 
 class TalkshowStation extends RadioStation {
-    /** @type {"talkshow"} */
+    /** @readonly @type {"talkshow"} */
     type = "talkshow"
 
     getTrack() {
         const segmentList = this.meta.fileGroups.track
-        const selectedSegment = segmentList[this.trackIndex % segmentList.length]
-        selectedSegment.category = CAT_MUSIC
-        return selectedSegment
+        return segmentList[this.trackIndex % segmentList.length]
     }
 
     getRandomTransition() {
         const transitions = this.meta.fileGroups.id
-        const selectedTransition = transitions[this.indexDrawPools.nextUniqueIndex(getCategoryId(CAT_IDENTS), transitions.length, this.PRNG.next())]
-        selectedTransition.category = CAT_IDENTS
-        return selectedTransition
+        return {
+            segmentInfo: transitions[this.indexDrawPools.nextUniqueIndex(getCategoryId(CAT.IDENTS), transitions.length, this.PRNG.next())],
+            category: CAT.IDENTS
+        }
     }
 
-    nextSegment() {
+    impl_nextSegment() {
         const currentSegment = this.peekSegment(0)
 
         let segmentInfo
-        if (currentSegment && currentSegment.category == 2) {
-            segmentInfo = this.getRandomTransition()
+        let category = CAT.MUSIC
+        if (currentSegment && currentSegment.category == CAT.MUSIC) {
+            ({ segmentInfo, category } = this.getRandomTransition())
         } else {
             segmentInfo = this.getTrack()
         }
         
-        return this.registerSegment(segmentInfo)
+        segmentInfo.category = category
+        return segmentInfo
     }
-}
-
-/** @param {import("./types").DJMarker[]} djMarkers */
-function getDjSpeechWindows(djMarkers) {
-    const intro = {}
-    const outro = {}
-    if (djMarkers) {
-        for (const marker of djMarkers) {
-            if (marker.value == "intro_start") {
-                intro.start = marker.offset
-            } else if (marker.value == "intro_end") {
-                intro.end = marker.offset
-            } else if (marker.value == "outro_start") {
-                outro.start = marker.offset
-            } else if (marker.value == "outro_end") {
-                outro.end = marker.offset
-            }
-        }
-    }
-    return {intro, outro}
 }
 
 class DynamicStation extends RadioStation {
-    /** @type {"dynamic"} */
+    /** @readonly @type {"dynamic"} */
     type = "dynamic"
 
     getRandomTrack(randNum) {
         const tracks = this.meta.fileGroups.track
-        const selectedTrack = tracks[this.indexDrawPools.nextUniqueIndex("track", tracks.length, randNum)]
-        selectedTrack.voiceovers = []
-        selectedTrack.category = CAT_MUSIC
-
-        const introList = selectedTrack?.attachments?.intro
-        const markers = selectedTrack?.markers?.dj
-        if (introList) {
-            const selectedIntro = this.resolveObjectPath(introList[this.PRNG.next() % introList.length])
-            const timeWindows = getDjSpeechWindows(markers)
-            selectedIntro.offset = (timeWindows.intro.start || DEFAULT_DJ_SPEECH_OFFSET_MS) / 1000
-
-            selectedTrack.voiceovers.push(selectedIntro)
-        }
-
-        return selectedTrack
+        return tracks[this.indexDrawPools.nextUniqueIndex("track", tracks.length, randNum)]
     }
 
     getRandomTransition(randNum) {
-        const select = (randNum % 2) == 0 ? CAT_IDENTS : CAT_DJSOLO
+        const select = (randNum % 2) == 0 ? CAT.IDENTS : CAT.DJSOLO
         const transitionType = getCategoryId(select)
 
         const transitions = this.meta.fileGroups[transitionType]
-        const selectedTransition = transitions[this.indexDrawPools.nextUniqueIndex(transitionType, transitions.length, randNum)]
-        selectedTransition.category = select
-        return selectedTransition
+        return {
+            segmentInfo: transitions[this.indexDrawPools.nextUniqueIndex(transitionType, transitions.length, randNum)],
+            category: select
+        }
     }
 
-    nextSegment() {
+    /** @param {PlayableSegment} playableSegment  */
+    impl_resolveSegment(playableSegment) {
+        const info = playableSegment.info
+
+        const introList = info?.attachments?.intro
+        if (introList) {
+            const selectedIntro = this.resolveObjectPath(introList[this.PRNG.next() % introList.length])
+            const timeWindows = playableSegment.getSpeechWindows()
+            selectedIntro.offset = (timeWindows.intro.start || DEFAULT_DJ_SPEECH_OFFSET_MS) / 1000
+
+            playableSegment.voiceovers.push(selectedIntro)
+        }
+
+    }
+
+    impl_nextSegment() {
         const randNum = this.PRNG.next()
         const randPercent = this.PRNG.toFloat(randNum) * 100
         const currentSegment = this.peekSegment(0)
 
         let segmentInfo
-        if (currentSegment && currentSegment.category == CAT_MUSIC && randPercent < 50) {
-            segmentInfo = this.getRandomTransition(randNum)
+        let category = CAT.MUSIC
+        if (currentSegment && currentSegment.category == CAT.MUSIC && randPercent < 50) {
+            ({ segmentInfo, category } = this.getRandomTransition(randNum))
         } else {
             segmentInfo = this.getRandomTrack(randNum)
         }
-      
-        return this.registerSegment(segmentInfo)
+        
+        segmentInfo.category = category
+        return segmentInfo
     }
 }

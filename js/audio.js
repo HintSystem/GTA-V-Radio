@@ -277,14 +277,16 @@ export const RetuneSound = {
         // Apply low-pass filtering to the buffer
         applyLowPassFilter(data, 7800, sampleRate, 3); // 7800 Hz cutoff, 3 poles
         return buffer
-    },    
+    },
 
-    start() {
+    positioned() {
         const source = audioContext.createBufferSource()
         source.buffer = this.retunePositioned
         source.connect(sfxGain)
         source.start()
+    },
 
+    start() {
         this.staticLoop.play(Math.random() * 5)
 
         const blipLoop = () => {
@@ -323,37 +325,46 @@ const VOICEOVER_DUCK_RAMP_DURATION = 0.8
 const VOICEOVER_DUCK_RAMP_POSITION = 0.5
 const VOICEOVER_DUCK_GAIN = 0.4
 
+/** @param {AudioManager & {info: import("./types").VoiceoverInfo}} voiceover */
+async function playVoiceover(voiceover) {
+    return new Promise((resolve) => {
+        const audioTime = MainTrack.audio.currentTime
+        const offset = voiceover.info.offset
+        const duration = voiceover.info.duration
+        const endTime = offset + voiceover.info.duration
+
+        if (audioTime > endTime) {
+            resolve()
+            return
+        }
+
+        VoiceoverTrack = voiceover
+        VoiceoverTrack.onDestroy = () => { resolve() }
+        
+        if (audioTime < offset) {
+            MainTrack.setTimeout(() => {
+                VoiceoverTrack.play()
+            }, offset)
+        } else {
+            VoiceoverTrack.play(audioTime - offset)
+        }
+        
+        const duckRampDownStart = offset - (VOICEOVER_DUCK_RAMP_DURATION * VOICEOVER_DUCK_RAMP_POSITION)
+        const duckRampUpStart = duration - (VOICEOVER_DUCK_RAMP_DURATION * (1 - VOICEOVER_DUCK_RAMP_POSITION))
+
+        MainTrack.scheduleDuckingRamp(trackGain, duckRampDownStart, VOICEOVER_DUCK_RAMP_DURATION, 1, VOICEOVER_DUCK_GAIN)
+        VoiceoverTrack.scheduleDuckingRamp(trackGain, duckRampUpStart, VOICEOVER_DUCK_RAMP_DURATION, VOICEOVER_DUCK_GAIN, 1)
+    })
+}
+
 /** @param {import("./radio").PlayableSegment} segment */
 export function playSegment(segment) {
     MainTrack = new AudioManager(segment.info, trackGain, true)
     MainTrack.playSynced(segment.startTimestamp)
 
     for (const voiceover of segment.voiceovers || []) {
-        voiceoverQueue.push(new AudioManager(voiceover, speechGain, true)) // Preload voiceovers
-    }
-
-    /** @param {AudioManager & {info: import("./types").VoiceoverInfo}} voiceover */
-    async function playVoiceover(voiceover) {
-        return new Promise((resolve) => {
-            VoiceoverTrack = voiceover
-            VoiceoverTrack.onDestroy = () => { resolve() }
-
-            if (MainTrack.audio.currentTime > voiceover.info.offset) {
-                resolve()
-                return
-            }
-
-            MainTrack.setTimeout(() => {
-                VoiceoverTrack.play()
-            }, voiceover.info.offset)
-            
-            const positionOffset = (VOICEOVER_DUCK_RAMP_DURATION * VOICEOVER_DUCK_RAMP_POSITION)
-            const voiceoverStart = voiceover.info.offset - positionOffset
-            const voiceoverEnd = voiceover.info.duration - positionOffset
-            console.log(voiceover.info.offset, voiceoverStart)
-            MainTrack.scheduleDuckingRamp(trackGain, voiceoverStart, VOICEOVER_DUCK_RAMP_DURATION, 1, VOICEOVER_DUCK_GAIN)
-            VoiceoverTrack.scheduleDuckingRamp(trackGain, voiceoverEnd, VOICEOVER_DUCK_RAMP_DURATION, VOICEOVER_DUCK_GAIN, 1)
-        })
+        const manager = new AudioManager(voiceover, speechGain, true) // Preload voiceovers
+        voiceoverQueue.push(manager) 
     }
 
     async function processVoiceoverQueue() {
@@ -362,7 +373,8 @@ export function playSegment(segment) {
             await playVoiceover(voiceover)
         }
     }
-    processVoiceoverQueue()
+
+    MainTrack.audio.addEventListener("playing", processVoiceoverQueue, { once: true })
 }
 
 export default { context: audioContext, masterGain, speechGain, sfxGain }

@@ -10,11 +10,6 @@ let stationIndex = null
 /** @type {StationMeta[]} */
 let stationList = []
 
-function onSegmentEnd() {
-    playSegment(station.nextSegment())
-    MainTrack.onAudibleEnd(onSegmentEnd)
-}
-
 const defaultTitle = document.title
 function resetRadioMeta() {
     document.title = defaultTitle
@@ -55,21 +50,36 @@ function getPrevStation() {
 /** @type {Object<string, Array<(() => void)>>} */
 let stationListeners = {}
 
+function attachRetuneListener() {
+    MainTrack.audio.addEventListener("waiting", () => {
+        RetuneSound.start()
+        MainTrack.audio.addEventListener("canplay", () => {
+            RetuneSound.stop()
+            attachRetuneListener()
+        }, { once: true })
+    }, { once: true })
+}
+
+function onSegmentEnd() {
+    playSegment(station.nextSegment())
+    attachRetuneListener()
+    MainTrack.onAudibleEnd(onSegmentEnd)
+}
+
 /** Syncs audio tracks to currently loaded radio station */
 function syncToStation() {
     stopAudioTracks()
     audio.context.resume()
     
-    RetuneSound.start()
+    RetuneSound.positioned()
     
     const time = performance.now()
     const syncedSegment = station.getSyncedSegment()
     console.log(`Syncing to station took: ${performance.now() - time}ms`)
     console.log(syncedSegment)
+    
     playSegment(syncedSegment)
-    
-    MainTrack.audio.addEventListener("canplay", () => { RetuneSound.stop() })
-    
+    attachRetuneListener()
     MainTrack.onAudibleEnd(onSegmentEnd)
 }
 

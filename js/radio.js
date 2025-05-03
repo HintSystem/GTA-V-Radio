@@ -147,8 +147,6 @@ export class PlayableSegment {
     constructor(segmentInfo, startTimestamp) {
         /** @readonly @type {SegmentInfo} */
         this.info = segmentInfo
-        /** @type {SegmentCategory} */
-        this.category = segmentInfo.category || CAT.MUSIC
         /** @type {import("./types").VoiceoverInfo[]} - Chosen speeches for track, if any */
         this.voiceovers = []
         /** @type {number} - UTC time (in milliseconds) representing when the segment started playing */
@@ -465,7 +463,7 @@ class StaticStation extends RadioStation {
 
     impl_nextSegment() {
         const segmentList = this.meta.fileGroups.track
-        return segmentList[this.segmentIndex % segmentList.length]
+        return setSegmentCategory(segmentList[this.segmentIndex % segmentList.length], CAT.MUSIC)
     }
 }
 
@@ -577,7 +575,7 @@ class DynamicStation extends RadioStation {
         }
 
         if (segmentInfo) { return segmentInfo }
-        
+
         return setSegmentCategory(this.getRandomTrack(randNum), CAT.MUSIC)        
     }
 }

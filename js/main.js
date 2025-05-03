@@ -1,14 +1,15 @@
-import { radioMeta, pageIcon } from "./constants.js"
+import { logs } from "./logging.js"
+import { radioMetaPromise, pageIcon } from "./constants.js"
 import { StationMeta, RadioStation } from "./radio.js"
 import audio, { MainTrack, playSegment, stopAudioTracks, RetuneSound } from "./audio.js"
 
 /** @type {?RadioStation} */
-let station = null
+export let station = null
 /** @type {?number} */
-let stationIndex = null
+export let stationIndex = null
 
 /** @type {StationMeta[]} */
-let stationList = []
+export let stationList = []
 
 const defaultTitle = document.title
 function resetRadioMeta() {
@@ -50,19 +51,24 @@ function getPrevStation() {
 /** @type {Object<string, Array<(() => void)>>} */
 let stationListeners = {}
 
-function attachRetuneListener() {
+function stopRetuneOnPlay() {
+    MainTrack.audio.addEventListener("canplay", () => {
+        RetuneSound.stop()
+        retuneOnBuffer()
+    }, { once: true })
+}
+
+function retuneOnBuffer() {
     MainTrack.audio.addEventListener("waiting", () => {
         RetuneSound.start()
-        MainTrack.audio.addEventListener("canplay", () => {
-            RetuneSound.stop()
-            attachRetuneListener()
-        }, { once: true })
+        stopRetuneOnPlay()
     }, { once: true })
 }
 
 function onSegmentEnd() {
     playSegment(station.nextSegment())
-    attachRetuneListener()
+    logs.logNextSegment(station.clone().nextSegment())
+    retuneOnBuffer()
     MainTrack.onAudibleEnd(onSegmentEnd)
 }
 
@@ -72,14 +78,17 @@ function syncToStation() {
     audio.context.resume()
     
     RetuneSound.positioned()
+    RetuneSound.start()
     
     const time = performance.now()
     const syncedSegment = station.getSyncedSegment()
-    console.log(`Syncing to station took: ${performance.now() - time}ms`)
-    console.log(syncedSegment)
+    console.groupEnd()
+    logs.logStationSync(performance.now() - time, station.meta.info.title)
     
     playSegment(syncedSegment)
-    attachRetuneListener()
+    logs.logNextSegment(station.clone().nextSegment())
+
+    stopRetuneOnPlay()
     MainTrack.onAudibleEnd(onSegmentEnd)
 }
 
@@ -162,7 +171,7 @@ function newStationButton() {
     }
 }
 
-radioMeta.then(function createRadioStationButtons (meta) {
+radioMetaPromise.then(function createRadioStationButtons (meta) {
     clearStationList()
 
     const noStationBtn = newStationButton()

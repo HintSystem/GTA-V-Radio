@@ -20,12 +20,12 @@ Recreating every GTA V radio station, playable in your browser
 * [x] Static stations (e.g., East Los FM)
 * [ ] Talkshow stations
   * [x] Main audio track
-  * [ ] Advertisements
+  * [x] Advertisements
   * [ ] News
 * [ ] Dynamic stations
   * [x] Main audio track
   * [x] Track intros 
-  * [ ] Advertisements
+  * [x] Advertisements
   * [ ] News
   * [ ] Takeovers (e.g., Dre Day, iFruit Radio Skepta playlist)
 * [ ] Radio stations:

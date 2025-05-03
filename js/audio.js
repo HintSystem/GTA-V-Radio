@@ -1,8 +1,10 @@
+import { logs } from "./logging.js"
+
 /** @type {AudioContext} */
 // @ts-ignore
 let audioContext = new (window.AudioContext || window.webkitAudioContext)()
 
-const AUDIO_DESYNC_THRESHOLD = 140 // Firefox fingerprint protection can reduce time precision to 100m so have to take that into consideration
+const AUDIO_DESYNC_THRESHOLD = 180 // Firefox fingerprint protection can reduce time precision to 100m so have to take that into consideration
 const AUDIO_SYNC_INTERVAL = 8000
 
 const DUCK_RAMP_PREEMPT_TIME = 2 // AudioContext sometimes fails to work when scheduling value changes right away so some buffer time is required
@@ -13,12 +15,14 @@ export class AudioManager {
     audio
     /** @type {MediaElementAudioSourceNode} */
     source
-    /** @type {() => void} */
-    onDestroy
-    /** @private @type {() => void} */
-    _onSync
-    /** @private @type {number} */
-    _syncInterval
+    /** @type {(() => void) | null} */
+    onDestroy = null
+    /** @private @type {(() => void) | null} */
+    _onCanPlaySync = null
+    /** @private @type {number | null} */
+    _syncInterval = null
+    /** @private @type {number | null} */
+    _awaitSyncTimeout = null
     /** @private @type {boolean} */
     _connected = false
 
@@ -69,28 +73,52 @@ export class AudioManager {
      */
     playSynced (timestamp) {
         this._cleanupSync()
+        this.stop()
 
-        if (timestamp) {
-            this._onSync = () => {
-                const audioTime = (Date.now() - timestamp)
-                const desync = audioTime - (this.audio.currentTime * 1000)
+        if (!Number.isFinite(timestamp)) { throw new Error("Cannot run playSynced() when timestamp is not a finite number") }
 
-                if (this.audio.currentTime > 0) { console.log(`Desync: ${Math.floor(desync)}ms`) }
-                if (Math.abs(desync) > AUDIO_DESYNC_THRESHOLD) {
-                    console.log(`Jump to sync`)
-                    this.audio.currentTime = (audioTime / 1000)
-                    return
-                }
-            }
-
-            this._onSync()
-            this._syncInterval = setInterval(() => {
-                if (!this.isBuffering) { this._onSync() }
-            }, AUDIO_SYNC_INTERVAL)
-
-            this.audio.addEventListener("canplay", this._onSync)
+        const audio = this.audio
+        function getSyncInfo() {
+            const audioTime = Date.now() - timestamp
+            return { audioTime: audioTime / 1000, desyncMs: audioTime - (audio.currentTime * 1000) }
         }
-        this.resume()
+
+        function syncAudio(force = false) {
+            const { audioTime, desyncMs } = getSyncInfo()
+            
+            if (force || Math.abs(desyncMs) > AUDIO_DESYNC_THRESHOLD) {
+                logs.logJump(desyncMs)
+                audio.currentTime = audioTime
+            } else if (audio.currentTime > 0) {
+                logs.logDesync(desyncMs, audioTime)
+            }
+        }
+
+        const waitUntilAudioTime = () => {
+            const { audioTime } = getSyncInfo()
+            if (audioTime < -0.01) {
+                console.warn(`Waiting for synced audio to begin... (${audioTime}s)`)
+                this._awaitSyncTimeout = setTimeout(waitUntilAudioTime, Math.min(-audioTime * 1000 - 5, 4000))
+            } else {
+                syncAudio()
+
+                this._syncInterval = setInterval(() => {
+                    if (!this.isBuffering) syncAudio()
+                }, AUDIO_SYNC_INTERVAL)
+
+                this._onCanPlaySync = () => {
+                    syncAudio(true)
+                    setTimeout(() => {
+                        if (!this._onCanPlaySync) return
+                        audio.addEventListener("canplay", this._onCanPlaySync, { once: true })
+                    }, 100)
+                }
+                audio.addEventListener("canplay", this._onCanPlaySync, { once: true })
+
+                this.resume()
+            }
+        }
+        waitUntilAudioTime()
     }
 
     /**
@@ -152,13 +180,17 @@ export class AudioManager {
 
     /** @private */
     _cleanupSync() {
-        if (this._onSync) {
-            this.audio.removeEventListener("canplay", this._onSync)
-            this._onSync = null
+        if (this._onCanPlaySync) {
+            this.audio.removeEventListener("canplay", this._onCanPlaySync)
+            this._onCanPlaySync = null
         }
         if (this._syncInterval) {
             clearInterval(this._syncInterval)
             this._syncInterval = null
+        }
+        if (this._awaitSyncTimeout) {
+            clearTimeout(this._awaitSyncTimeout)
+            this._awaitSyncTimeout = null
         }
     }
 
@@ -328,12 +360,11 @@ const VOICEOVER_DUCK_GAIN = 0.4
 /** @param {AudioManager & {info: import("./types").VoiceoverInfo}} voiceover */
 async function playVoiceover(voiceover) {
     return new Promise((resolve) => {
-        const audioTime = MainTrack.audio.currentTime
         const offset = voiceover.info.offset
         const duration = voiceover.info.duration
         const endTime = offset + voiceover.info.duration
 
-        if (audioTime > endTime) {
+        if (MainTrack.audio.currentTime > endTime) {
             resolve()
             return
         }
@@ -341,12 +372,13 @@ async function playVoiceover(voiceover) {
         VoiceoverTrack = voiceover
         VoiceoverTrack.onDestroy = () => { resolve() }
         
-        if (audioTime < offset) {
+        if (MainTrack.audio.currentTime < offset) {
             MainTrack.setTimeout(() => {
+                if (MainTrack.audio.currentTime > endTime) return
                 VoiceoverTrack.play()
             }, offset)
         } else {
-            VoiceoverTrack.play(audioTime - offset)
+            VoiceoverTrack.play(MainTrack.audio.currentTime - offset)
         }
         
         const duckRampDownStart = offset - (VOICEOVER_DUCK_RAMP_DURATION * VOICEOVER_DUCK_RAMP_POSITION)
@@ -359,6 +391,8 @@ async function playVoiceover(voiceover) {
 
 /** @param {import("./radio").PlayableSegment} segment */
 export function playSegment(segment) {
+    logs.startSegment(segment)
+
     MainTrack = new AudioManager(segment.info, trackGain, true)
     MainTrack.playSynced(segment.startTimestamp)
 

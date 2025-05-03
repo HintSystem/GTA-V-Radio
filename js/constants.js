@@ -37,7 +37,11 @@ export async function loadRadioMeta() {
     }
 }
 
-export const radioMeta = loadRadioMeta()
+/** @type {import("./types").RadioMetadata} */
+export let radioMeta
+
+export const radioMetaPromise = loadRadioMeta()
+radioMetaPromise.then((meta) => {radioMeta = meta})
 
 export function getDataPath() {
     return lastUsedPath

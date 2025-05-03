@@ -14,14 +14,18 @@ export interface RelativeAudioInfo extends AudioInfo {
   path: string
 }
 
-export interface SegmentInfo extends RelativeAudioInfo {
-  category: number
-  [key: string]: any
-}
-
 export interface VoiceoverInfo extends AudioInfo {
   /** Time (in seconds) relative to track when this speech should start playing */
   offset: number
+}
+
+export interface SegmentInfo extends RelativeAudioInfo {
+  attachments?: { intro?: VoiceoverInfo[] }
+  markers?: {
+    track?: TrackMarker[]
+    dj?: DJMarker[]
+  }
+  category: number
 }
 
 export type StationType = "dynamic" | "talkshow" | "static"
@@ -62,15 +66,10 @@ export interface StationMetadata {
   }
 
   fileGroups: {
-    track: Array<SegmentInfo & {
-      attachments?: { intro?: VoiceoverInfo[] }
-      markers?: {
-        track?: TrackMarker[]
-        dj?: DJMarker[]
-      }
-    }>
-    id?: SegmentInfo[]
-    mono_solo?: SegmentInfo[]
+    track: SegmentInfo[]
+    adverts?: SegmentInfo[]
+    id?: RelativeAudioInfo[]
+    mono_solo?: RelativeAudioInfo[]
     general?: RelativeAudioInfo[]
     time_evening?: RelativeAudioInfo[]
     time_morning?: RelativeAudioInfo[]
@@ -81,7 +80,7 @@ export interface StationMetadata {
 
 export interface RadioMetadata {
   common: {
-    fileGroups: Object[]
+    [key: string]: SegmentInfo[]
   }
   stations: {
     /** Relative path to the folder of a station */

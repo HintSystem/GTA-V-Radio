@@ -1,4 +1,4 @@
-import { getDataPath } from "./constants.js"
+import { radioMeta, getDataPath } from "./constants.js"
 import { SeededPRNG, IndexDrawPoolManager } from "./utility.js"
 
 /**
@@ -15,10 +15,10 @@ const CAT = {
 }
 
 /** @param {SegmentCategory} categoryValue */
-function getCategoryId(categoryValue) {
+export function getCategoryId(categoryValue) {
     switch (categoryValue) {
         case CAT.ADVERTS:
-            return "advert"
+            return "adverts"
         case CAT.IDENTS:
             return "id"
         case CAT.MUSIC:
@@ -28,7 +28,8 @@ function getCategoryId(categoryValue) {
     }
 }
 
-const DEFAULT_DJ_SPEECH_OFFSET_MS = 4000
+const DEFAULT_DJ_INTRO_OFFSET_MS = 4000
+const DEFAULT_DJ_OUTRO_OFFSET_MS = 4000
 
 /** @typedef {import("./types").StationMetadata} StationMetadata */
 /** @typedef {import("./types").SegmentInfo} SegmentInfo */
@@ -94,6 +95,11 @@ export class StationMeta {
      */
     resolveObjectPath(object) {
         const info = Object.assign({}, object)
+        if (object.path.split("/")[0] == "common") {
+            info.path = getDataPath() + object.path
+            return info
+        }
+        
         info.path = this.getAbsolutePath(object.path)
         return info
     }
@@ -149,6 +155,18 @@ export class PlayableSegment {
         this.startTimestamp = startTimestamp
     }
 
+    /** Gets the title for this segment, defaults to file name if it's a mix (used for logging) */
+    getTitle() {
+        const trackMarkers = this.info?.markers?.track
+        if (trackMarkers && trackMarkers.length == 1) {
+            const title = trackMarkers[0].title
+            if (title) return title
+        }
+
+        const path = this.info.path.split("/")
+        return path[path.length - 1]
+    }
+
     getSpeechWindows() {
         /** @type {import("./types").DJMarker[]} */
         const djMarkers = this.info?.markers?.dj || []
@@ -177,7 +195,7 @@ export class PlayableSegment {
 export class RadioStation extends StationMeta {
     /** @readonly @type {StationType} */
     type
-    /** @type {number} - The amount of time that has passed since the first track of the radio station played (required for getting a synced segment) */
+    /** @type {number} - Amount of time (in seconds) that has passed since the first track of the radio station played */
     accumulatedTime
     /** @type {number} - Current segment index */
     segmentIndex
@@ -187,8 +205,8 @@ export class RadioStation extends StationMeta {
     segmentHistory
     /** @private @type {number} */
     _historyLimit = 2
-    /** @type {number} */
-    prngIndexReserve = 2
+    /** @type {Record<string, SegmentInfo[]>} */
+    commonListCache = {}
     
     /**
      * UTC time (in milliseconds) when the radio station playback sync was reset (resets every month)
@@ -232,6 +250,8 @@ export class RadioStation extends StationMeta {
         const cloned = Object.create(Object.getPrototypeOf(this))
         cloned.path = this.path
         cloned.meta = this.meta
+        cloned._historyLimit = this._historyLimit
+        cloned.commonListCache = this.commonListCache
 
         if (keepState) {
             cloned.segmentHistory = Array.from(this.segmentHistory)
@@ -342,18 +362,40 @@ export class RadioStation extends StationMeta {
     getSyncedSegment() {
         this.resetState()
         
-        const start = this.startTimestamp
+        const now = Date.now() - this.startTimestamp
         while (true) {
             const segment = this._nextSegmentInfo((segmentInfo) => {
                 const segmentDuration = segmentInfo.audibleDuration || segmentInfo.duration
-                const time = start + ((this.accumulatedTime + segmentDuration) * 1000)
+                const time = (this.accumulatedTime + segmentDuration) * 1000
 
-                if (time > Date.now()) { return this._newPlayableSegment(segmentInfo) }
+                if (time > now) { return this._newPlayableSegment(segmentInfo) }
                 return null
             })
     
             if (segment) { return segment }
         }
+    }
+
+    /**
+     * @protected
+     * @param {"adverts" | "news"} listCategory
+     */
+    getCommonList(listCategory) {
+        let resultList = this.commonListCache[listCategory] || []
+        if (resultList.length != 0) { return this.commonListCache[listCategory] }
+
+        if (listCategory in this.meta.fileGroups) {
+            resultList = this.meta.fileGroups[listCategory]
+        }
+
+        if (listCategory in this.meta.common) {
+            for (const listId of this.meta.common[listCategory]) {
+                resultList = resultList.concat(radioMeta.common[listId])
+            }
+        }
+
+        this.commonListCache[listCategory] = resultList
+        return resultList
     }
 
     /** 
@@ -365,19 +407,31 @@ export class RadioStation extends StationMeta {
      * @private
      * @template T
      * @overload
-     * @param {((segmentInfo: SegmentInfo) => T)} onBeforeRegister - Optional callback executed after generating `SegmentInfo` but before registering it. If provided, the callback's return value is returned.
+     * @param {((segmentInfo: SegmentInfo) => T)} onAfterRegister - Optional callback executed after registering `SegmentInfo` to history but before updating station state. If provided, the callback's return value is returned.
      * @returns {T}
      */
-    _nextSegmentInfo(onBeforeRegister = null) {
+    _nextSegmentInfo(onAfterRegister = null) {
         const segmentInfo = this.impl_nextSegment()
-        const nextIndex = this.PRNG.index + this.prngIndexReserve // Reserve some prng indexes for impl_resolveSegmentTransition to prevent drift
 
-        const returns = onBeforeRegister ? onBeforeRegister(segmentInfo) : null
+        // Register in history
+        this.segmentHistory.unshift(segmentInfo)
+        if (this.segmentHistory.length > this._historyLimit) {
+            this.segmentHistory.length = this._historyLimit
+        }
+    
+        let returnValue = segmentInfo
+        if (onAfterRegister) {
+            const segmentIndex = this.PRNG.index
+            returnValue = onAfterRegister(segmentInfo)
+            this.PRNG.index = segmentIndex
+        }
 
-        this.PRNG.index = nextIndex
-        this._registerSegment(segmentInfo)
-
-        return onBeforeRegister ? returns : segmentInfo
+        // Update state
+        if (segmentInfo.category === CAT.MUSIC) this.trackIndex++
+        this.segmentIndex++
+        this.accumulatedTime += segmentInfo.audibleDuration || segmentInfo.duration
+    
+        return returnValue
     }
 
     /**
@@ -393,28 +447,21 @@ export class RadioStation extends StationMeta {
         this.impl_resolveSegment(playableSegment)
         return playableSegment
     }
+}
 
-    /**
-     * Registers segment info into history and updates station state
-     * @private
-     * @param {SegmentInfo} segmentInfo
-     */
-    _registerSegment(segmentInfo) {
-        this.segmentHistory.unshift(segmentInfo)
-        if (this.segmentHistory.length > this._historyLimit) {
-            this.segmentHistory.length = this._historyLimit
-        }
-
-        if (segmentInfo.category == CAT.MUSIC) { this.trackIndex++ }
-        this.segmentIndex++
-        this.accumulatedTime += segmentInfo.audibleDuration || segmentInfo.duration
-    }
+/**
+ * @template T
+ * @param {T & import("./types.js").RelativeAudioInfo} segmentInfo
+ * @param {SegmentCategory} category
+ * @returns {SegmentInfo}
+ */
+function setSegmentCategory(segmentInfo, category) {
+    return Object.assign({ category }, segmentInfo) // Clone segmentInfo, category won't be included in every referenced segmentInfo
 }
 
 class StaticStation extends RadioStation {
     /** @readonly @type {"static"} */
     type = "static"
-    prngIndexReserve = 0
 
     impl_nextSegment() {
         const segmentList = this.meta.fileGroups.track
@@ -431,27 +478,31 @@ class TalkshowStation extends RadioStation {
         return segmentList[this.trackIndex % segmentList.length]
     }
 
-    getRandomTransition() {
-        const transitions = this.meta.fileGroups.id
-        return {
-            segmentInfo: transitions[this.indexDrawPools.nextUniqueIndex(getCategoryId(CAT.IDENTS), transitions.length, this.PRNG.next())],
-            category: CAT.IDENTS
+    getRandomTransition(currentCategory) {
+        let category, transitions
+        if (currentCategory == CAT.ADVERTS || currentCategory == CAT.NEWS) {
+            category = CAT.IDENTS
+            transitions = this.meta.fileGroups.id
+        } else {
+            category = CAT.ADVERTS
+            transitions = this.getCommonList("adverts")
         }
+
+        if (!transitions || transitions.length === 0) return null
+
+        const segmentInfo = transitions[this.indexDrawPools.nextUniqueIndex(getCategoryId(category), transitions.length, this.PRNG.next())]
+        return setSegmentCategory(segmentInfo, category)
     }
 
     impl_nextSegment() {
-        const currentSegment = this.peekSegment(0)
+        const currentCategory = this.peekSegment(0)?.category
 
-        let segmentInfo
-        let category = CAT.MUSIC
-        if (currentSegment && currentSegment.category == CAT.MUSIC) {
-            ({ segmentInfo, category } = this.getRandomTransition())
-        } else {
-            segmentInfo = this.getTrack()
+        if ([CAT.MUSIC, CAT.NEWS, CAT.ADVERTS].includes(currentCategory)) {
+            const transition = this.getRandomTransition(currentCategory)
+            if (transition) return transition
         }
         
-        segmentInfo.category = category
-        return segmentInfo
+        return setSegmentCategory(this.getTrack(), CAT.MUSIC)
     }
 }
 
@@ -465,45 +516,68 @@ class DynamicStation extends RadioStation {
     }
 
     getRandomTransition(randNum) {
-        const select = (randNum % 2) == 0 ? CAT.IDENTS : CAT.DJSOLO
-        const transitionType = getCategoryId(select)
+        let select = randNum % 2 == 0 ? CAT.DJSOLO : CAT.ADVERTS
 
-        const transitions = this.meta.fileGroups[transitionType]
-        return {
-            segmentInfo: transitions[this.indexDrawPools.nextUniqueIndex(transitionType, transitions.length, randNum)],
-            category: select
+        const categoryId = getCategoryId(select)
+        let transitions
+        if (select == CAT.ADVERTS) {
+            transitions = this.getCommonList("adverts")
+        } else {
+            transitions = this.meta.fileGroups[categoryId]
         }
+
+        const segmentInfo = transitions[this.indexDrawPools.nextUniqueIndex(categoryId, transitions.length, randNum)]
+        return setSegmentCategory(segmentInfo, select)
+    }
+
+    getRandomId(randNum) {
+        const category = getCategoryId(CAT.IDENTS)
+        const idents = this.meta.fileGroups[category]
+
+        if (!idents || idents.length === 0) return null
+
+        const segmentInfo = idents[this.indexDrawPools.nextUniqueIndex(category, idents.length, randNum)]
+        return setSegmentCategory(segmentInfo, CAT.IDENTS)
     }
 
     /** @param {PlayableSegment} playableSegment  */
     impl_resolveSegment(playableSegment) {
-        const info = playableSegment.info
-
-        const introList = info?.attachments?.intro
+        const nextSegment = this.peekSegment(1)
+        const segmentInfo = playableSegment.info
+        
+        const timeWindows = playableSegment.getSpeechWindows()
+        const introList = segmentInfo?.attachments?.intro
         if (introList) {
             const selectedIntro = this.resolveObjectPath(introList[this.PRNG.next() % introList.length])
-            const timeWindows = playableSegment.getSpeechWindows()
-            selectedIntro.offset = (timeWindows.intro.start || DEFAULT_DJ_SPEECH_OFFSET_MS) / 1000
+            selectedIntro.offset = (timeWindows.intro.start || DEFAULT_DJ_INTRO_OFFSET_MS) / 1000
 
             playableSegment.voiceovers.push(selectedIntro)
         }
 
+        const toAdsList = this.meta.fileGroups?.to_adverts
+        const toNewsList = this.meta.fileGroups?.to_news
+        if (nextSegment.category == CAT.ADVERTS && toAdsList) {
+            const selectedOutro = /** @type {any} */ (this.resolveObjectPath(toAdsList[this.indexDrawPools.nextUniqueIndex("to_ad", toAdsList.length, this.PRNG.next())]))
+            selectedOutro.offset = ((timeWindows.outro?.end || (segmentInfo.duration - DEFAULT_DJ_OUTRO_OFFSET_MS)) - selectedOutro.duration) / 1000
+
+            playableSegment.voiceovers.push(selectedOutro)
+        }
     }
 
     impl_nextSegment() {
         const randNum = this.PRNG.next()
         const randPercent = this.PRNG.toFloat(randNum) * 100
-        const currentSegment = this.peekSegment(0)
+        const currentCategory = this.peekSegment(0)?.category
 
         let segmentInfo
-        let category = CAT.MUSIC
-        if (currentSegment && currentSegment.category == CAT.MUSIC && randPercent < 50) {
-            ({ segmentInfo, category } = this.getRandomTransition(randNum))
-        } else {
-            segmentInfo = this.getRandomTrack(randNum)
+        if (currentCategory == CAT.ADVERTS) {
+            segmentInfo = this.getRandomId(randNum)
+        } else if (currentCategory == CAT.MUSIC && randPercent < 50) {
+            segmentInfo = this.getRandomTransition(randNum)
         }
+
+        if (segmentInfo) { return segmentInfo }
         
-        segmentInfo.category = category
-        return segmentInfo
+        return setSegmentCategory(this.getRandomTrack(randNum), CAT.MUSIC)        
     }
 }

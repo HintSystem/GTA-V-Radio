@@ -1,7 +1,10 @@
 import { logs } from "./logging.js"
 import { radioMetaPromise, pageIcon } from "./constants.js"
 import { StationMeta, RadioStation } from "./radio.js"
-import audio, { MainTrack, playSegment, stopAudioTracks, RetuneSound } from "./audio.js"
+import audio, { MainTrack, preloadSegment, playSegment, stopAudioTracks, RetuneSound } from "./audio.js"
+
+const RETUNE_DELAY_MS = 100
+const SEGMENT_PRELOAD_TIME = 10
 
 /** @type {?RadioStation} */
 export let station = null
@@ -60,16 +63,30 @@ function stopRetuneOnPlay() {
 
 function retuneOnBuffer() {
     MainTrack.audio.addEventListener("waiting", () => {
-        RetuneSound.start()
+        setTimeout(() => {
+            if (MainTrack.isBuffering) RetuneSound.start()
+        }, RETUNE_DELAY_MS)
         stopRetuneOnPlay()
     }, { once: true })
 }
 
-function onSegmentEnd() {
-    playSegment(station.nextSegment())
+/** Plays a segment and gets ready to load the next */
+function playStationSegment(playableSegment) {
+    playSegment(playableSegment)
     logs.logNextSegment(station.clone().nextSegment())
-    retuneOnBuffer()
-    MainTrack.onAudibleEnd(onSegmentEnd)
+
+    const offset = Math.max(MainTrack.currentTime + 0.1, MainTrack.info.duration - SEGMENT_PRELOAD_TIME)
+    MainTrack.setTimeout(preloadNextSegment, offset, true)
+}
+
+function preloadNextSegment() {
+    const preloadedSegment = preloadSegment(station.nextSegment())
+    logs.logPreloadingSegment(preloadedSegment)
+
+    MainTrack.onAudibleEnd(() => {
+        playStationSegment(preloadedSegment)
+        retuneOnBuffer()
+    })
 }
 
 /** Syncs audio tracks to currently loaded radio station */
@@ -82,14 +99,12 @@ function syncToStation() {
     
     const time = performance.now()
     const syncedSegment = station.getSyncedSegment()
+
     console.groupEnd()
     logs.logStationSync(performance.now() - time, station.meta.info.title)
     
-    playSegment(syncedSegment)
-    logs.logNextSegment(station.clone().nextSegment())
-
+    playStationSegment(syncedSegment)
     stopRetuneOnPlay()
-    MainTrack.onAudibleEnd(onSegmentEnd)
 }
 
 /**

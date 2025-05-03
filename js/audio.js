@@ -1,4 +1,5 @@
 import { logs } from "./logging.js"
+import { PlayableSegment } from "./radio.js"
 
 /** @type {AudioContext} */
 // @ts-ignore
@@ -11,12 +12,14 @@ const DUCK_RAMP_PREEMPT_TIME = 2 // AudioContext sometimes fails to work when sc
 
 /** @typedef {import("./types").AudioInfo} AudioInfo */
 export class AudioManager {
-    /** @type {HTMLAudioElement} */
-    audio
     /** @type {MediaElementAudioSourceNode} */
     source
+    /** @type {boolean} */
+    ended = false
     /** @type {(() => void) | null} */
     onDestroy = null
+    /** @type {number | null} */
+    syncTimestamp = null
     /** @private @type {(() => void) | null} */
     _onCanPlaySync = null
     /** @private @type {number | null} */
@@ -34,12 +37,20 @@ export class AudioManager {
     constructor(audioInfo, connection = null, autoDestroy = false) {
         /** @type {AudioNode?} */
         this.connection = connection
-
         this.info = audioInfo
+        /** @type {HTMLAudioElement} */
         this.audio = new Audio(this.info.path)
 
         this.audio.crossOrigin = "anonymous"
-        if (autoDestroy) { this.audio.addEventListener("ended", () => this.destroy()) }
+        this.audio.addEventListener("ended", () => {
+            if (autoDestroy) this.destroy()
+        })
+    }
+
+    /** Current playback position in seconds. More precise if using playSynced. */
+    get currentTime() {
+        if (this.syncTimestamp) return (Date.now() - this.syncTimestamp) / 1000
+        return this.audio.currentTime
     }
 
     /** @private */
@@ -52,7 +63,11 @@ export class AudioManager {
         }
     }
 
-    resume() { this._ensureConnected(); this.audio.play(); }
+    resume() {
+        this.ended = false
+        this._ensureConnected()
+        this.audio.play()
+    }
 
     pause() { this.audio.pause() }
 
@@ -76,6 +91,7 @@ export class AudioManager {
         this.stop()
 
         if (!Number.isFinite(timestamp)) { throw new Error("Cannot run playSynced() when timestamp is not a finite number") }
+        this.syncTimestamp = timestamp
 
         const audio = this.audio
         function getSyncInfo() {
@@ -97,7 +113,7 @@ export class AudioManager {
         const waitUntilAudioTime = () => {
             const { audioTime } = getSyncInfo()
             if (audioTime < -0.01) {
-                console.warn(`Waiting for synced audio to begin... (${audioTime}s)`)
+                console.warn(`Waiting for synced audio to begin... (${audioTime.toFixed(4)}s)`)
                 this._awaitSyncTimeout = setTimeout(waitUntilAudioTime, Math.min(-audioTime * 1000 - 5, 4000))
             } else {
                 syncAudio()
@@ -125,12 +141,16 @@ export class AudioManager {
      * Executes callback once audio time reaches delay
      * @param {() => void} callback
      * @param {number} delay - Delay (in seconds)
+     * @param {boolean} alwaysRun - If true, executes callback even if currentTime already passed delay
      */
-    setTimeout(callback, delay) {
-        if (this.audio.currentTime > delay) { return }
+    setTimeout(callback, delay, alwaysRun = false) {
+        if (this.currentTime > delay || this.ended) {
+            if (alwaysRun) callback()
+            return
+        }
 
         const onTimeUpdate = () => {
-            if (this.audio.currentTime >= delay) {
+            if (this.currentTime >= delay) {
                 this.audio.removeEventListener('timeupdate', onTimeUpdate)
                 callback()
             }
@@ -138,6 +158,23 @@ export class AudioManager {
 
         this.audio.addEventListener('timeupdate', onTimeUpdate)
     }
+
+    /**
+     * Executes callback when audio has audibly ended. Will run instantly if already ended.
+     * @param {() => void} callback
+     */
+    onAudibleEnd(callback) {
+        if (this.ended) { callback(); return }
+
+        const duration = this.info.audibleDuration || (this.info.duration - 0.1)
+        if (duration) {
+            if (this.currentTime > duration) { callback(); return }
+            this.setTimeout(callback, duration, true)
+        } else {
+            this.audio.addEventListener("ended", callback)
+        }
+    }
+
     /**
      * Schedules a ducking ramp to be executed ahead of time
      * @param {GainNode} gainNode 
@@ -148,7 +185,7 @@ export class AudioManager {
      * @returns {boolean} True if ramp was successful, false if ramp was skipped
      */
     scheduleDuckingRamp(gainNode, startTime, rampDuration, startGain, endGain) {
-        const audioTime = this.audio.currentTime
+        const audioTime = this.currentTime
 
         // Ramp has not started - schedule fully
         if (audioTime < startTime) {
@@ -166,20 +203,9 @@ export class AudioManager {
         return false
     }
 
-    /**
-     * Executes callback when audio has audibly ended
-     * @param {() => void} callback
-     */
-    onAudibleEnd(callback) {
-        if (this.info.audibleDuration) {
-            this.setTimeout(callback, this.info.audibleDuration)
-        } else {
-            this.audio.addEventListener("ended", callback)
-        }
-    }
-
     /** @private */
     _cleanupSync() {
+        this.syncTimestamp = null
         if (this._onCanPlaySync) {
             this.audio.removeEventListener("canplay", this._onCanPlaySync)
             this._onCanPlaySync = null
@@ -195,6 +221,7 @@ export class AudioManager {
     }
 
     destroy() {
+        this.ended = true
         this._cleanupSync()
         
         if (this.audio) {
@@ -341,10 +368,7 @@ export const RetuneSound = {
 }
 RetuneSound.init()
 
-let voiceoverQueue = []
 export function stopAudioTracks() {
-    voiceoverQueue = []
-
     RetuneSound.stop()
     if (MainTrack) { MainTrack.destroy() }
     if (VoiceoverTrack) { VoiceoverTrack.destroy() }
@@ -357,14 +381,17 @@ const VOICEOVER_DUCK_RAMP_DURATION = 0.8
 const VOICEOVER_DUCK_RAMP_POSITION = 0.5
 const VOICEOVER_DUCK_GAIN = 0.4
 
-/** @param {AudioManager & {info: import("./types").VoiceoverInfo}} voiceover */
-async function playVoiceover(voiceover) {
+/** @typedef {AudioManager & {info: import("./radio").SegmentInfo}} SegmentAudio */
+/** @typedef {AudioManager & {info: import("./types").VoiceoverInfo}} VoiceoverAudio */
+
+/** @param {VoiceoverAudio} voiceover */
+function playVoiceover(voiceover) {
     return new Promise((resolve) => {
         const offset = voiceover.info.offset
         const duration = voiceover.info.duration
         const endTime = offset + voiceover.info.duration
 
-        if (MainTrack.audio.currentTime > endTime) {
+        if (MainTrack.currentTime > endTime) {
             resolve()
             return
         }
@@ -372,13 +399,13 @@ async function playVoiceover(voiceover) {
         VoiceoverTrack = voiceover
         VoiceoverTrack.onDestroy = () => { resolve() }
         
-        if (MainTrack.audio.currentTime < offset) {
+        if (MainTrack.currentTime < offset) {
             MainTrack.setTimeout(() => {
-                if (MainTrack.audio.currentTime > endTime) return
+                if (MainTrack.currentTime > endTime) return
                 VoiceoverTrack.play()
             }, offset)
         } else {
-            VoiceoverTrack.play(MainTrack.audio.currentTime - offset)
+            VoiceoverTrack.play(MainTrack.currentTime - offset)
         }
         
         const duckRampDownStart = offset - (VOICEOVER_DUCK_RAMP_DURATION * VOICEOVER_DUCK_RAMP_POSITION)
@@ -389,26 +416,54 @@ async function playVoiceover(voiceover) {
     })
 }
 
-/** @param {import("./radio").PlayableSegment} segment */
-export function playSegment(segment) {
-    logs.startSegment(segment)
+export class PreloadedSegment extends PlayableSegment {
+    /** @param {PlayableSegment} segment  */
+    constructor(segment) {
+        super(segment.info, segment.startTimestamp)
+        this.voiceovers = segment.voiceovers
 
-    MainTrack = new AudioManager(segment.info, trackGain, true)
-    MainTrack.playSynced(segment.startTimestamp)
-
-    for (const voiceover of segment.voiceovers || []) {
-        const manager = new AudioManager(voiceover, speechGain, true) // Preload voiceovers
-        voiceoverQueue.push(manager) 
-    }
-
-    async function processVoiceoverQueue() {
-        while (voiceoverQueue.length > 0) {
-            const voiceover = voiceoverQueue.shift()
-            await playVoiceover(voiceover)
+        this.audioTrack = /** @type {SegmentAudio} */ (new AudioManager(segment.info, trackGain, true)) // Preload main track
+        this.audioTrack.audio.load()
+        
+        /** @type {VoiceoverAudio[]} */
+        this.voiceoverQueue = []
+        for (const voiceover of segment.voiceovers || []) {
+            const manager = new AudioManager(voiceover, speechGain, true) // Preload voiceovers
+            manager.audio.load()
+            this.voiceoverQueue.push(/** @type {any} */ (manager))
         }
     }
 
-    MainTrack.audio.addEventListener("playing", processVoiceoverQueue, { once: true })
+    async processVoiceoverQueue() {
+        while (this.voiceoverQueue.length > 0) {
+            const voiceover = this.voiceoverQueue.shift()
+            await playVoiceover(voiceover)
+        }
+    }
+}
+
+/** @param {PlayableSegment} segment */
+export function preloadSegment(segment) {
+    return new PreloadedSegment(segment)
+}
+
+/** @param {PlayableSegment | PreloadedSegment} segment */
+export function playSegment(segment) {
+    /** @type {PreloadedSegment} */
+    let preloadedSegment
+    if (segment instanceof PlayableSegment) {
+        preloadedSegment = new PreloadedSegment(segment)
+    } else {
+        preloadedSegment = segment
+    }
+
+    logs.startSegment(preloadedSegment)
+
+    MainTrack = preloadedSegment.audioTrack
+    MainTrack.playSynced(preloadedSegment.startTimestamp)
+    MainTrack.audio.addEventListener("playing", () => {
+        preloadedSegment.processVoiceoverQueue()
+    }, { once: true })
 }
 
 export default { context: audioContext, masterGain, speechGain, sfxGain }

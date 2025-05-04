@@ -3,7 +3,7 @@ import { getCategoryId } from "./radio.js"
 /** @typedef {import("./radio").PlayableSegment} PlayableSegment */
 /** @typedef {import("./audio").PreloadedSegment} PreloadedSegment */
 
-const SHARED_STYLE = 'padding: 0px 5px; border-radius: 2px;'
+const SHARED_STYLE = 'padding: 0 5px; border-radius: 2px;'
 
 class RadioLogger {
 
@@ -62,6 +62,14 @@ class RadioLogger {
         );
     }
 
+    /** @param {import("./types.js").TrackMarker} marker  */
+    logTitleChange(marker) {
+        console.log(
+            `%c🎵 Track title changed: title - "${marker.title}" | artist - "${marker.artist}"`,
+            'color: #1A202C; background: #F7FAFC; border-left: 4px solid #3182CE; padding: 0 10px;'
+        );
+    }
+
     /** @param {PlayableSegment} playableSegment */
     logNextSegment(playableSegment) {
         console.log(
@@ -85,7 +93,7 @@ class RadioLogger {
      * @param {number} time - Time in seconds
      */
     logDesync(desyncMs, time) {
-        if (desyncMs < 50) { return }
+        if (Math.abs(desyncMs) < 50) { return }
         console.log(
             `%c⚠️ Audio time desync: ${desyncMs.toFixed(0)}ms at ${time.toFixed(0)}s`,
             'color: #C53030; background: #FED7D7; font-weight: bold;' + SHARED_STYLE

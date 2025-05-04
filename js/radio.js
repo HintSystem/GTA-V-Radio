@@ -153,6 +153,22 @@ export class PlayableSegment {
         this.startTimestamp = startTimestamp
     }
 
+    /** Segment progress in seconds */
+    get currentTime() { return (Date.now() - this.startTimestamp) / 1000 }
+
+    getActiveTrackMarker() {
+        const trackMarkers = this.info?.markers?.track
+        if (!trackMarkers || trackMarkers.length == 0) return {}
+
+        let lastMarker = 0
+        for (let i = 0; i < trackMarkers.length; i++) {
+            if (trackMarkers[i].offset / 1000 > this.currentTime) break
+            lastMarker = i
+        }
+
+        return { marker: trackMarkers[lastMarker], index: lastMarker }
+    }
+
     /** Gets the title for this segment, defaults to file name if it's a mix (used for logging) */
     getTitle() {
         const trackMarkers = this.info?.markers?.track

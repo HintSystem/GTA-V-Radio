@@ -5,8 +5,9 @@ import { PlayableSegment } from "./radio.js"
 // @ts-ignore
 let audioContext = new (window.AudioContext || window.webkitAudioContext)()
 
-const AUDIO_DESYNC_THRESHOLD = 180 // Firefox fingerprint protection can reduce time precision to 100m so have to take that into consideration
-const AUDIO_SYNC_INTERVAL = 8000
+const AUDIO_PREPLAY_TIME = 0.8 // Execute onAudibleEnd and play audio 800ms early to reduce sync jumps
+const AUDIO_DESYNC_THRESHOLD = 200 // Firefox fingerprint protection can reduce time precision to 100m so have to take that into consideration
+const AUDIO_SYNC_INTERVAL_MS = 8000
 
 const DUCK_RAMP_PREEMPT_TIME = 2 // AudioContext sometimes fails to work when scheduling value changes right away so some buffer time is required
 
@@ -43,6 +44,7 @@ export class AudioManager {
 
         this.audio.crossOrigin = "anonymous"
         this.audio.addEventListener("ended", () => {
+            this.ended = true
             if (autoDestroy) this.destroy()
         })
     }
@@ -112,22 +114,22 @@ export class AudioManager {
 
         const waitUntilAudioTime = () => {
             const { audioTime } = getSyncInfo()
-            if (audioTime < -0.01) {
-                console.warn(`Waiting for synced audio to begin... (${audioTime.toFixed(4)}s)`)
-                this._awaitSyncTimeout = setTimeout(waitUntilAudioTime, Math.min(-audioTime * 1000 - 5, 4000))
+            if (audioTime < -0.1) {
+                console.log(`Waiting for synced audio to begin... (${audioTime.toFixed(4)}s)`)
+                this._awaitSyncTimeout = setTimeout(waitUntilAudioTime, Math.min(-audioTime * 1000 - 50, 4000)) // Check if audioTime > 0 every 4 seconds
             } else {
                 syncAudio()
 
                 this._syncInterval = setInterval(() => {
                     if (!this.isBuffering) syncAudio()
-                }, AUDIO_SYNC_INTERVAL)
+                }, AUDIO_SYNC_INTERVAL_MS)
 
                 this._onCanPlaySync = () => {
-                    syncAudio(true)
+                    syncAudio(true) // Force sync because waiting for audio will cause delays
                     setTimeout(() => {
                         if (!this._onCanPlaySync) return
                         audio.addEventListener("canplay", this._onCanPlaySync, { once: true })
-                    }, 100)
+                    }, 100) // Delay new event listener to prevent feedback loop caused by setting currentTime
                 }
                 audio.addEventListener("canplay", this._onCanPlaySync, { once: true })
 
@@ -166,10 +168,9 @@ export class AudioManager {
     onAudibleEnd(callback) {
         if (this.ended) { callback(); return }
 
-        const duration = this.info.audibleDuration || (this.info.duration - 0.1)
+        let duration = this.info.audibleDuration || this.info.duration  
         if (duration) {
-            if (this.currentTime > duration) { callback(); return }
-            this.setTimeout(callback, duration, true)
+            this.setTimeout(callback, Math.min(duration, (this.info.duration - AUDIO_PREPLAY_TIME)), true)
         } else {
             this.audio.addEventListener("ended", callback)
         }

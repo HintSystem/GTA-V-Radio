@@ -12,9 +12,8 @@ Recreating every GTA V radio station, playable in your browser
 ## 🛠️ Features
 
 * [x] Website backgrounds
-* [x] Media controls
-* [x] Media session info
-* [ ] Currently playing track title/artist
+* [x] Media session info/controls
+* [x] Currently playing track title/artist
 * [ ] Radio settings menu 
 * [x] Radio synced to real time
 * [x] Static stations (e.g., East Los FM)

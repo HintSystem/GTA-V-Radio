@@ -32,7 +32,7 @@ export type StationType = "dynamic" | "talkshow" | "static"
 export type IconType = "color" | "monochrome" | "full" | "cover"
 
 export interface AudioMarker {
-  /** Time (in ms) this marker is positioned at in the track */
+  /** Marker position in track (in ms) */
   offset: number
 }
 export interface TrackMarker extends AudioMarker {

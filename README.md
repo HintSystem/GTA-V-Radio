@@ -12,10 +12,10 @@ Recreating every GTA V radio station, playable in your browser
 ## 🛠️ Features
 
 * [x] Website backgrounds
-* [x] Media session info/controls
+* [x] Media session info and controls
 * [x] Currently playing track title/artist
-* [ ] Radio settings menu 
 * [x] Radio synced to real time
+* [ ] Radio settings menu 
 * [x] Static stations (e.g., East Los FM)
 * [ ] Talkshow stations
   * [x] Main audio track
@@ -27,12 +27,12 @@ Recreating every GTA V radio station, playable in your browser
   * [x] Advertisements
   * [ ] News
   * [ ] Takeovers (e.g., Dre Day, iFruit Radio Skepta playlist)
-* [ ] Radio stations:
+* [ ] Implemented radio stations
   * [x] Base game stations
   * [ ] Self Radio
   * [x] The Lab
   * [x] Blonded Los Santos 97.8 FM
-  * [ ] Los Santos Underground Radio
+  * [x] Los Santos Underground Radio
   * [ ] iFruit Radio
   * [x] Still Slipping Los Santos
   * [ ] Kult FM 99.1

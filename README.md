@@ -35,7 +35,7 @@ Recreating every GTA V radio station, playable in your browser
   * [x] Los Santos Underground Radio
   * [ ] iFruit Radio
   * [x] Still Slipping Los Santos
-  * [ ] Kult FM 99.1
+  * [x] Kult FM
   * [ ] Music Locker Radio
   * [ ] Audio Player
   * [ ] MOTOMAMI Los Santos

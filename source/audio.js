@@ -1,4 +1,5 @@
-import { logs } from "./logging.js"
+import { logs } from "./debug/logging.js"
+import { audioSettings } from "./settings.js"
 import { PlayableSegment } from "./radio.js"
 
 /** @type {AudioContext} */
@@ -11,7 +12,7 @@ const AUDIO_SYNC_INTERVAL_MS = 8000
 
 const DUCK_RAMP_PREEMPT_TIME = 2 // AudioContext sometimes fails to work when scheduling value changes right away so some buffer time is required
 
-/** @typedef {import("./types").AudioInfo} AudioInfo */
+/** @typedef {import("./types.js").AudioInfo} AudioInfo */
 export class AudioManager {
     /** @type {MediaElementAudioSourceNode} */
     source
@@ -240,20 +241,33 @@ export class AudioManager {
 }
 
 const masterGain = audioContext.createGain()
-masterGain.gain.value = 0.6
 masterGain.connect(audioContext.destination)
 
 const musicGain = audioContext.createGain()
-musicGain.gain.value = 0.8
 musicGain.connect(masterGain)
 
 const speechGain = audioContext.createGain()
-speechGain.gain.value = 0.8
 speechGain.connect(masterGain)
 
 const sfxGain = audioContext.createGain()
-sfxGain.gain.value = 0.6
 sfxGain.connect(masterGain)
+
+audioSettings.subscribe((key, value) => {
+    switch (key) {
+        case "masterGain":
+            masterGain.gain.value = value * 0.8
+            break
+        case "musicGain":
+            musicGain.gain.value = value
+            break
+        case "speechGain":
+            speechGain.gain.value = value
+            break
+        case "sfxGain":
+            sfxGain.gain.value = value * 1.2
+            break
+    }
+}, true)
 
 // For voiceover ducking
 const trackGain = audioContext.createGain()
@@ -264,113 +278,13 @@ export let MainTrack = null
 /** @type {?AudioManager} */
 export let VoiceoverTrack = null
 
-function randomPitchVariance(maxSemitones = 2) {
-    const semitoneShift = (Math.random() * 2 - 1) * maxSemitones;
-    return Math.pow(2, semitoneShift / 12);
+const stopAudioTrackListeners = new Set()
+export function addStopAudioTracksListener(listener) {
+    stopAudioTrackListeners.add(listener)
 }
-
-function applyLowPassFilter(samples, cutoffFreq, sampleRate, poles = 1) {
-    const RC = 1.0 / (cutoffFreq * 2 * Math.PI);
-    const dt = 1.0 / sampleRate;
-    const alpha = dt / (RC + dt);
-
-    for (let p = 0; p < poles; p++) {
-        let previous = 0;
-        for (let i = 0; i < samples.length; i++) {
-            samples[i] = previous = previous + (alpha * (samples[i] - previous));
-        }
-    }
-}
-
-export const RetuneSound = {
-    /** @type {AudioBuffer} */
-    retunePositioned: null,
-    /** @type {AudioManager} */
-    staticLoop: null,
-    /** @type {Array<AudioManager>} */
-    blips: [],
-    timeoutId: null,
-
-    init() {
-        this.retunePositioned = this.createRetunePositionedSound()
-        this.staticLoop = new AudioManager({ path: "assets/sfx/RADIO_STATIC_LOOP.wav" }, sfxGain)
-        this.staticLoop.audio.volume = 0.5
-        this.staticLoop.audio.loop = true
-
-        this.blips = []
-        for (let i = 1; i <= 16; i++) {
-            if (i === 3) continue
-            const blipSound = new AudioManager({ path: `assets/sfx/BLIP_${i}.wav` }, sfxGain)
-            blipSound.audio.volume = 0.38
-            this.blips.push(blipSound)
-        }
-    },
-
-    /** Synthesizes the audio buffer for the retune positioned sound, because it's a synth sound in the game */
-    createRetunePositionedSound() {
-        const duration = 0.2
-        const sampleRate = audioContext.sampleRate
-        const length = duration * sampleRate
-        const buffer = audioContext.createBuffer(1, length, sampleRate)
-        const data = buffer.getChannelData(0)
-    
-        const frequency = 2600
-        const volume = 0.8
-    
-        for (let i = 0; i < length; i++) {
-            const time = i / sampleRate
-            const square = Math.sign(Math.sin(2 * Math.PI * frequency * time)) // Square wave
-    
-            // Exponential envelope
-            let envelope = 1;
-            if (time < 0.03) {
-                envelope = Math.pow(time / 0.03, 1); // Attack
-            } else if (time < 0.0555) {
-                envelope = Math.pow(1 - ((time - 0.03) / 0.0255), 1); // Decay
-            } else {
-                envelope = 0;
-            }
-    
-            data[i] = square * envelope * volume;
-        }
-
-        // Apply low-pass filtering to the buffer
-        applyLowPassFilter(data, 7800, sampleRate, 3); // 7800 Hz cutoff, 3 poles
-        return buffer
-    },
-
-    positioned() {
-        const source = audioContext.createBufferSource()
-        source.buffer = this.retunePositioned
-        source.connect(sfxGain)
-        source.start()
-    },
-
-    start() {
-        this.staticLoop.play(Math.random() * 5)
-
-        const blipLoop = () => {
-            const chosenBlip = this.blips[Math.floor(Math.random() * this.blips.length)]
-            chosenBlip.audio.playbackRate = randomPitchVariance()
-            chosenBlip.play()
-            this.timeoutId = setTimeout(blipLoop, 15 + (Math.random() * 500))
-        }
-
-        blipLoop()
-    },
-
-    stop() {
-        if (this.staticLoop) { this.staticLoop.stop() }
-        if (this.timeoutId !== null) {
-            clearTimeout(this.timeoutId)
-            this.timeoutId = null
-        }
-    }
-}
-RetuneSound.init()
 
 export function stopAudioTracks() {
-    RetuneSound.stop()
+    for (const listener of stopAudioTrackListeners) listener()
     if (MainTrack) { MainTrack.destroy() }
     if (VoiceoverTrack) { VoiceoverTrack.destroy() }
 
@@ -382,8 +296,8 @@ const VOICEOVER_DUCK_RAMP_DURATION = 0.8
 const VOICEOVER_DUCK_RAMP_POSITION = 0.5
 const VOICEOVER_DUCK_GAIN = 0.4
 
-/** @typedef {AudioManager & {info: import("./radio").SegmentInfo}} SegmentAudio */
-/** @typedef {AudioManager & {info: import("./types").VoiceoverInfo}} VoiceoverAudio */
+/** @typedef {AudioManager & {info: import("./radio.js").SegmentInfo}} SegmentAudio */
+/** @typedef {AudioManager & {info: import("./types.js").VoiceoverInfo}} VoiceoverAudio */
 
 /** @param {VoiceoverAudio} voiceover */
 function playVoiceover(voiceover) {

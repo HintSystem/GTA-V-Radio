@@ -1,12 +1,28 @@
+@import url("source/ui/components.css");
+@import url("source/ui/pause-menu.css");
+
 @font-face {
     font-family: 'Pricedown';
     font-weight: 900;
     src: url('assets/Pricedown Bl.otf');
 }
 
+@font-face {
+    font-family: 'Roboto';
+    src: url('assets/Roboto.ttf');
+}
+
 :root {
     overscroll-behavior: none;
     overflow-x: hidden;
+}
+
+button {
+    padding-inline: 0;
+    outline: none;
+    border: none;
+    padding: 0;
+    padding-block: 0;
 }
 
 body {
@@ -33,22 +49,47 @@ body {
     z-index: -1;
 }
 
-.title {
+#titleBanner {
+    pointer-events: none;
     user-select: none;
-    display: flex;
-    align-items: center;
-    @media (min-width: 800px) {
-        margin-bottom: 4rem;
-    }
-
-    img { width: min(30rem, 95vw); max-width: 1028px; }
+    width: min(30rem, 95vw);
+    max-width: 1028px;
 }
 
-.container {
+#mainContent {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.6rem
+}
+#mainContent .ui-el:not(:hover) {
+    background-color: rgba(var(--ui-primary-color), 0.4);
+}
+
+#contentBody {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.8rem;
+}
+@media (min-width: 800px) and (min-height: 800px) {
+    #contentBody { margin: 4rem 0; }
+}
+
+#dashboard {
+    display: flex;
+    gap: var(--ui-item-gap);
+}
+
+#volumeControl {
+    display: flex;
+    align-items: center;
+    gap: var(--ui-item-gap)
+}
+#volumeControl .icon {
+    flex-shrink: 0;
+}
+#volumeControl .slider-input {
+    width: 80px;
 }
 
 #stationList {
@@ -56,40 +97,37 @@ body {
     flex-wrap: wrap;
     justify-content: center;
     gap: min(0.45rem, 2vw);
-    width: 100vw;
+    width: calc(100vw - 0.8rem);
+}
+#stationList label {
+    transform-style: preserve-3d;
+    cursor: pointer;
+}
+#stationList label input:checked + .ui-el {
+    outline: 0.35rem solid rgb(var(--ui-accent-color));
+}
+#stationList .ui-el {
+    display: block;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 8%;
+    height: min(22vw, 100px);
+    width: auto;
+    aspect-ratio: 1/1;
 
-    label {
-        cursor: pointer;
+    border-radius: 100%;
+}
+#stationList .ui-el img {
+    overflow: visible;
+    user-select: none;
+    pointer-events: none;
 
-        span {
-            display: block;
-            background-color: rgba(255, 255, 255, 0.35);
-            backdrop-filter: blur(0.2vw);
-            border-radius: 100%;
-
-            box-sizing: border-box;
-            margin: 0;
-            padding: 8%;
-            width: auto;
-            height: min(22vw, 6rem);
-            aspect-ratio: 1/1;
-        }
-
-        input:checked + span {
-            outline: 0.35rem solid rgb(112, 182, 213);
-        }
-
-        img {
-            user-select: none;
-            pointer-events: none;
-
-            display: flex;
-            background: none;
-            text-align: center;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            width: 100%;
-        }
-    }
+    display: flex;
+    background: none;
+    text-align: center;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    filter: drop-shadow(0 0 8px rgba(var(--ui-secondary-color), 0.6));
 }

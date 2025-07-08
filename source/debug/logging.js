@@ -1,7 +1,7 @@
-import { getCategoryId } from "./radio.js"
+import { getCategoryId } from "../radio.js"
 
-/** @typedef {import("./radio").PlayableSegment} PlayableSegment */
-/** @typedef {import("./audio").PreloadedSegment} PreloadedSegment */
+/** @typedef {import("../radio.js").PlayableSegment} PlayableSegment */
+/** @typedef {import("../audio.js").PreloadedSegment} PreloadedSegment */
 
 const SHARED_STYLE = 'padding: 0 5px; border-radius: 2px;'
 
@@ -57,12 +57,12 @@ class RadioLogger {
         const title = preloadedSegment.getTitle()
         const begins = (Math.abs(Date.now() - preloadedSegment.startTimestamp) / 1000).toFixed(1)
         console.log(
-            `%c📦 Preloading segment: ${title} (begins in ${begins}s)`,
+            `%c📦 Preloading ${getCategoryId(preloadedSegment.info.category)}: ${title} (begins in ${begins}s)`,
             'color: #6B46C1; background: #E9D8FD;' + SHARED_STYLE
         );
     }
 
-    /** @param {import("./types.js").TrackMarker} marker  */
+    /** @param {import("../types.js").TrackMarker} marker  */
     logTitleChange(marker) {
         console.log(
             `%c🎵 Track title changed: title - "${marker.title}" | artist - "${marker.artist}"`,

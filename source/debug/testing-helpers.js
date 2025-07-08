@@ -1,5 +1,5 @@
-import { station } from "./main.js"
-import { MainTrack, playSegment, stopAudioTracks } from "./audio.js"
+import { station } from "../station-manager.js"
+import { MainTrack, playSegment, stopAudioTracks } from "../audio.js"
 
 // @ts-ignore
 window.radio = {

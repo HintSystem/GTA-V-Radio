@@ -1,46 +1,26 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
+        <link id="pageIcon" rel="icon" href="assets/images/gta_v.ico">
         <title>GTA V Radio</title>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
         <link rel="stylesheet" href="index.css">
-        <script type="module" src="js/testing-helpers.js"></script>
+        <script type="module" src="source/debug/testing-helpers.js"></script>
+        <script type="module" src="index.js"></script>
     </head>
     <body>
         <div class="blur-overlay"></div>
-        <span style="position: absolute; padding: 0.2rem; right: 0; border-radius: 5px; background-color: rgba(0, 0, 0, 0.2);"><span id="time">0</span></span>
-        <script>
-            const time = document.getElementById("time")
 
-            const INIT_REAL_MS = Date.UTC(2011, 0, 1, 12, 0, 0)
-            const TIME_SCALE = 30
-            const MS_PER_DAY = 24 * 60 * 60 * 1000
-            const MINUTE_OFFSET = 25 * 60 * 1000 // Time in gta online seems to be offset by 25 minutes
-            const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
-            const INIT_WEEKDAY = 5
-            setInterval(() => {
-                const gameMs = (Date.now() - INIT_REAL_MS) * TIME_SCALE - MINUTE_OFFSET
-                const gameMsToday = ((gameMs % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY
-                const totalDays = Math.floor(gameMs / MS_PER_DAY)
-
-                const d = new Date(gameMsToday)
-                const hh = String(d.getUTCHours()).padStart(2, '0')
-                const mm = String(d.getUTCMinutes()).padStart(2, '0')
-                const ss = String(d.getUTCSeconds()).padStart(2, '0')
-
-                const weekdayIndex = (INIT_WEEKDAY + totalDays) % 7
-                const weekdayName = WEEKDAYS[weekdayIndex]
-
-                time.textContent = `${hh}:${mm}:${ss} ${weekdayName}`
-            }, 100)
-        </script>
-
-        <div class="container">
-            <div class="title">
-                <img src="banner.png"/>
+        <div id="mainContent">
+            <img id="titleBanner" src="banner.png"/>
+            <div id="contentBody">
+                <div id="dashboard">
+                    <div id="volumeControl" class="ui-el"></div>
+                    <button id="settingsButton" class="ui-el">Settings</button>
+                </div>
+                <div id="stationList"></div>
             </div>
-            <div id="stationList"></div>
         </div>
 
         <script>
@@ -52,7 +32,5 @@
                     document.body.style.backgroundImage = `url('backgrounds/${selectBackground.path}')`
                 })
         </script>
-
-        <script type="module" src="js/main.js"></script>
     </body>
 </html>

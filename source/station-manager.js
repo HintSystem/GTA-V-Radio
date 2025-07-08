@@ -1,7 +1,9 @@
-import { logs } from "./logging.js"
-import { radioMetaPromise, pageIcon } from "./constants.js"
+import { logs } from "./debug/logging.js"
+import { pageIcon } from "./constants.js"
 import { StationMeta, RadioStation, PlayableSegment } from "./radio.js"
-import audio, { MainTrack, preloadSegment, playSegment, stopAudioTracks, RetuneSound } from "./audio.js"
+import audio, { MainTrack, preloadSegment, playSegment, stopAudioTracks } from "./audio.js"
+import { mod } from "./utility.js"
+import Sounds from "./sounds.js"
 
 const RETUNE_DELAY_MS = 100
 const SEGMENT_PRELOAD_TIME = 15
@@ -73,7 +75,7 @@ let retuneTimeout = null
 function stopRetuneOnPlay() {
     MainTrack.audio.addEventListener("canplay", () => {
         clearTimeout(retuneTimeout)
-        RetuneSound.stop()
+        Sounds.RETUNE.stop()
         retuneOnBuffer()
     }, { once: true })
 }
@@ -81,7 +83,7 @@ function stopRetuneOnPlay() {
 function retuneOnBuffer() {
     MainTrack.audio.addEventListener("waiting", () => {
         retuneTimeout = setTimeout(() => {
-            if (MainTrack.isBuffering) RetuneSound.start()
+            if (MainTrack.isBuffering) Sounds.RETUNE.start()
         }, RETUNE_DELAY_MS)
         stopRetuneOnPlay()
     }, { once: true })
@@ -126,13 +128,13 @@ function preloadNextSegment() {
 }
 
 /** Syncs audio tracks to currently loaded radio station */
-function syncToStation() {
+export function syncToStation() {
     stopAudioTracks()
     audio.context.resume()
     setMediaMeta()
     
-    RetuneSound.positioned()
-    RetuneSound.start()
+    Sounds.RETUNE.positioned()
+    Sounds.RETUNE.start()
     
     const time = performance.now()
     const syncedSegment = station.getSyncedSegment()
@@ -144,14 +146,12 @@ function syncToStation() {
     stopRetuneOnPlay()
 }
 
-function mod(n, m) { return ((n % m) + m) % m }
-
-function getNextStation() {
+export function getNextStation() {
     if (stationIndex === null) { return 0 }
     return mod(stationIndex + 1, stationList.length)
 }
 
-function getPrevStation() {
+export function getPrevStation() {
     if (stationIndex === null) { return stationList.length - 1 }
     return mod(stationIndex - 1, stationList.length)
 }
@@ -163,7 +163,7 @@ let stationListeners = {}
  * Loads, sets and syncs audio to a new station
  * @param {number} index - Index of the station (from stationList)
  */
-async function setStation(index) {
+export async function setStation(index) {
     stationIndex = index
 
     const callbacks = stationListeners[index] || []
@@ -178,12 +178,6 @@ async function setStation(index) {
     }
 }
 
-function clearStationList() {
-    stationListeners = {}
-    stationList = []
-    stationIndex = null
-}
-
 /**
  * Executes callback when user changes station (before station has finished loading)
  * @param {number|null} index - Index of the station (from stationList)
@@ -195,6 +189,12 @@ function addStationListener(index, callback) {
     if (!list.includes(callback)) { list.push(callback) }
 }
 
+export function clearStationList() {
+    stationListeners = {}
+    stationList = []
+    stationIndex = null
+}
+
 function newStationButton() {
     const label = document.createElement("label")
     const input = document.createElement("input")
@@ -202,6 +202,7 @@ function newStationButton() {
     input.type = "radio"
     input.name = "selected_station"
     const iconBorder = document.createElement("span")
+    iconBorder.className = "ui-el"
     const icon = document.createElement("img")
     icon.alt = "loading"
 
@@ -220,7 +221,7 @@ function newStationButton() {
     }
 }
 
-radioMetaPromise.then(function createRadioStationButtons (meta) {
+export function createRadioStationButtons(meta) {
     clearStationList()
 
     const noStationBtn = newStationButton()
@@ -247,4 +248,4 @@ radioMetaPromise.then(function createRadioStationButtons (meta) {
     }
 
     stationListUI.appendChild(noStationBtn.label)
-})
+}

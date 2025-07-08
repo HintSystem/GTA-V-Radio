@@ -1,13 +1,35 @@
+/** @type {HTMLLinkElement} */
+let defaultPageIcon = null
+
+function setDefaultPageIcon() {
+    let element = document.getElementById("pageIcon")
+    if (!element) return
+
+    defaultPageIcon = /** @type {HTMLLinkElement} */ (element.cloneNode())
+    return /** @type {HTMLLinkElement} */ (element)
+}
+
 export const pageIcon = {
-    element: document.createElement("link"),
+    element: setDefaultPageIcon(),
+    init: () => {
+        if (pageIcon.element) return
+        document.addEventListener("DOMContentLoaded", () => {
+            pageIcon.element = setDefaultPageIcon()
+        }, { once: true })
+    },
     reset: () => {
-        pageIcon.element.href = "assets/images/gta_v.ico"
-        pageIcon.element.removeAttribute("type")
+        if (!pageIcon.element || !defaultPageIcon) return
+
+        const parent = pageIcon.element.parentNode
+        if (!parent) return
+
+        const resetIcon = defaultPageIcon.cloneNode()
+        parent.removeChild(pageIcon.element)
+        parent.appendChild(resetIcon)
+        pageIcon.element = /** @type {HTMLLinkElement} */ (resetIcon)
     }
 }
-pageIcon.element.rel = "icon"
-pageIcon.reset()
-document.head.appendChild(pageIcon.element)
+pageIcon.init()
 
 export const localDataPath = "data/"
 export const remoteDataPath = "https://raw.githubusercontent.com/RegalTerritory/GTA-V-Radio-Stations/master/"

@@ -31,10 +31,10 @@ export function getCategoryId(categoryValue) {
 const DEFAULT_DJ_INTRO_OFFSET_MS = 4000
 const DEFAULT_DJ_OUTRO_OFFSET_MS = 4000
 
-/** @typedef {import("./types").StationMetadata} StationMetadata */
-/** @typedef {import("./types").SegmentInfo} SegmentInfo */
-/** @typedef {import("./types").StationType} StationType */
-/** @typedef {import("./types").IconType} IconType */
+/** @typedef {import("./types.js").StationMetadata} StationMetadata */
+/** @typedef {import("./types.js").SegmentInfo} SegmentInfo */
+/** @typedef {import("./types.js").StationType} StationType */
+/** @typedef {import("./types.js").IconType} IconType */
 
 /** Metadata for a radio station */
 export class StationMeta {
@@ -69,7 +69,7 @@ export class StationMeta {
         }
     }
 
-    /** Loads the metadata for this station */
+    /** Loads the metadata for this station, if it has not loaded already */
     async loadMeta() {
         if (!this._metaPromise) {
             this._metaPromise = fetch(this.getAbsolutePath("station.json"))
@@ -147,7 +147,7 @@ export class PlayableSegment {
     constructor(segmentInfo, startTimestamp) {
         /** @readonly @type {SegmentInfo} */
         this.info = segmentInfo
-        /** @type {import("./types").VoiceoverInfo[]} - Chosen speeches for track, if any */
+        /** @type {import("./types.js").VoiceoverInfo[]} - Chosen speeches for track, if any */
         this.voiceovers = []
         /** @type {number} - UTC time (in milliseconds) representing when the segment started playing */
         this.startTimestamp = startTimestamp
@@ -182,7 +182,7 @@ export class PlayableSegment {
     }
 
     getSpeechWindows() {
-        /** @type {import("./types").DJMarker[]} */
+        /** @type {import("./types.js").DJMarker[]} */
         const djMarkers = this.info?.markers?.dj || []
         const intro = {}
         const outro = {}

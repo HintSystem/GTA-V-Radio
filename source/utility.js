@@ -1,3 +1,36 @@
+const WEEKDAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday']
+const MS_PER_DAY = 24 * 60 * 60 * 1000
+
+const ONLINE_TIME = {
+    INIT_REAL_MS: Date.UTC(2011, 0, 1, 12, 0, 0),
+    INIT_WEEKDAY: 5,
+    TIME_SCALE: (30-0.000003),
+    MINUTE_OFFSET: 25 * 60 * 1000 // Time in gta online seems to be offset by 25 minutes
+}
+
+export function getGtaOnlineTime() {
+    const gameMs = (Date.now() - ONLINE_TIME.INIT_REAL_MS) * ONLINE_TIME.TIME_SCALE
+    const gameMsToday = ((gameMs % MS_PER_DAY) + MS_PER_DAY) % MS_PER_DAY
+    const totalDays = Math.floor(gameMs / MS_PER_DAY)
+
+    function pad2(n) { return n < 10 ? '0' + n : String(n) }
+
+    const d = new Date(gameMsToday)
+    const hh = pad2(d.getUTCHours())
+    const mm = pad2(d.getUTCMinutes())
+    const ss = pad2(d.getUTCSeconds())
+
+    const weekdayIndex = (ONLINE_TIME.INIT_WEEKDAY + totalDays) % 7
+    const weekdayName = WEEKDAYS[weekdayIndex]
+
+    return { hh, mm, ss, weekdayName }
+}
+
+export function mod(n, m) { return ((n % m) + m) % m }
+
+/** @param {any} n */
+export function isNumeric(n) { return !isNaN(parseFloat(n)) && isFinite(n) }
+
 export class SeededPRNG {
     /** @param {number} seed */
     constructor(seed) {

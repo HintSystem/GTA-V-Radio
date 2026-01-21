@@ -34,7 +34,7 @@ pageIcon.init()
 export const localDataPath = "data/"
 export const remoteDataPath = "https://raw.githubusercontent.com/RegalTerritory/GTA-V-Radio-Stations/master/"
 
-let lastUsedPath = localDataPath;
+let lastUsedPath = localDataPath
 
 /** @returns {Promise<import("./types").RadioMetadata>} */
 export async function loadRadioMeta() {

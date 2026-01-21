@@ -7,7 +7,7 @@ import { PlayableSegment } from "./radio.js"
 let audioContext = new (window.AudioContext || window.webkitAudioContext)()
 
 const AUDIO_PREPLAY_TIME = 0.8 // Execute onAudibleEnd and play audio 800ms early to reduce sync jumps
-const AUDIO_DESYNC_THRESHOLD = 200 // Firefox fingerprint protection can reduce time precision to 100m so have to take that into consideration
+const AUDIO_DESYNC_THRESHOLD = 200 // Firefox fingerprint protection can reduce time precision to 100ms so have to take that into consideration
 const AUDIO_SYNC_INTERVAL_MS = 8000
 
 const DUCK_RAMP_PREEMPT_TIME = 2 // AudioContext sometimes fails to work when scheduling value changes right away so some buffer time is required
@@ -364,14 +364,7 @@ export function preloadSegment(segment) {
 
 /** @param {PlayableSegment | PreloadedSegment} segment */
 export function playSegment(segment) {
-    /** @type {PreloadedSegment} */
-    let preloadedSegment
-    if (segment instanceof PlayableSegment) {
-        preloadedSegment = new PreloadedSegment(segment)
-    } else {
-        preloadedSegment = segment
-    }
-
+    let preloadedSegment = (segment instanceof PlayableSegment) ? new PreloadedSegment(segment) : segment
     logs.startSegment(preloadedSegment)
 
     MainTrack = preloadedSegment.audioTrack
@@ -381,4 +374,4 @@ export function playSegment(segment) {
     }, { once: true })
 }
 
-export default { context: audioContext, masterGain, speechGain, sfxGain }
+export default { context: audioContext, masterGain, musicGain, speechGain, sfxGain }

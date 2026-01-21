@@ -152,8 +152,11 @@ export class Property {
     constructor(defaultValue, getter, setter, onDestroy = null) {
         /** @type {V} */
         this.defaultValue = defaultValue
+        /** @private */
         this.listeners = new Set()
+        /** @private */
         this._getter = getter
+        /** @private */
         this._setter = setter
         this._onDestroy = onDestroy
     }
@@ -166,8 +169,14 @@ export class Property {
 
     reset() { this._setter(this.defaultValue) }
 
-    /** @param {(value: V) => void} listener */
-    subscribe(listener) { this.listeners.add(listener) }
+    /**
+     * @param {(value: V) => void} listener
+     * @param {boolean?} [immediate=false]
+     */
+    subscribe(listener, immediate = false) {
+        this.listeners.add(listener)
+        if (immediate) listener(this._getter())
+    }
 
     /** @param {(value: V) => void} listener */
     unsubscribe(listener) { this.listeners.delete(listener) }
@@ -192,6 +201,7 @@ export const audioSettings = new Settings("audio-settings", {
 /** @typedef {"online" | "michael" | "franklin" | "trevor" | "custom"} UIAccentColor */
 
 export const uiSettings = new Settings("ui-settings", {
-    theme: /** @type {UITheme} */ ("dark"),
-    accentColor: /** @type {UIAccentColor} */ ("online")
+    theme: /** @type {UITheme} */ ("light"),
+    accentColor: /** @type {UIAccentColor} */ ("online"),
+    showRadioDisplay: /** @type {boolean} */ (false)
 })

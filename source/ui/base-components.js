@@ -279,28 +279,6 @@ window.addEventListener("popstate", (event) => {
     }
 })
 
-document.addEventListener("keydown", (event) => {
-    if (menuStack.length > 0) {
-        const menu = menuStack[0]
-        const selectedPaths = menu.stateManager.getSelectedPathsDepthFirst()
-        
-        // Start with deepest selected descendant and propagate up
-        for (const path of selectedPaths) {
-            const component = componentRegistry.get(path)
-            if (component && component instanceof UIInput) {
-                if (component.onInput(event)) {
-                    return // Event was consumed
-                }
-            }
-        }
-    } else {
-        // Handle unopened menus
-        menuRegistry.forEach((menu) => {
-            menu.onInput(event)
-        })
-    }
-})
-
 export class UIComponent {
     /** @type {HTMLElement | null} */
     element = null
@@ -326,6 +304,50 @@ export class UIComponent {
         }
     }
 }
+
+function inputHandler(event=null) {
+    if (menuStack.length > 0) {
+        const menu = menuStack[0]
+        const selectedPaths = menu.stateManager.getSelectedPathsDepthFirst()
+        
+        // Start with deepest selected descendant and propagate up
+        for (const path of selectedPaths) {
+            const component = componentRegistry.get(path)
+            if (component && component instanceof UIInput) {
+                if (component.onInput(event)) {
+                    return // Event was consumed
+                }
+            }
+        }
+    } else {
+        // Handle unopened menus
+        menuRegistry.forEach((menu) => {
+            menu.onInput(event)
+        })
+    }
+}
+
+document.addEventListener("keydown", (event) => { inputHandler(event) })
+
+let gamepadInputFrame = null
+
+/** @param {GamepadEvent} event @param {boolean} connected */
+function gamepadHandler(event, connected) {
+    if (connected && gamepadInputFrame === null) {
+        gamepadInputLoop()
+    } else if (navigator.getGamepads().length === 0) {
+        cancelAnimationFrame(gamepadInputFrame)
+        gamepadInputFrame = null
+    }
+}
+
+function gamepadInputLoop() {
+    inputHandler()
+    gamepadInputFrame = requestAnimationFrame(gamepadInputLoop)
+}
+
+window.addEventListener("gamepadconnected", (e) => { gamepadHandler(e, true) })
+window.addEventListener("gamepaddisconnected", (e) => { gamepadHandler(e, false) })
 
 /** UI element that accepts user input */
 export class UIInput extends UIComponent {
@@ -431,11 +453,11 @@ export class UIInput extends UIComponent {
     }
 }
 
-/** @typedef {"vw" | "vh" | "vmin" | "vmax"} ScreenCSSUnit */
+/** @typedef {"vw" | "vh" | "vmin" | "vmax"} ViewportCSSUnit */
 
 /**
  * @param {number} value 
- * @param {ScreenCSSUnit} unit 
+ * @param {ViewportCSSUnit} unit 
  */
 function cssUnitToPixels(value, unit) {
     switch(unit) {
@@ -458,7 +480,7 @@ export class UIMenu extends UIInput {
     opened = false
     /** @private @type {number|null} */
     fontScaleValue = null
-    /** @private @type {ScreenCSSUnit|null} */
+    /** @private @type {ViewportCSSUnit|null} */
     fontScaleUnit = null
     /** @private @type {number} */
     prevFontSize = null
@@ -499,7 +521,7 @@ export class UIMenu extends UIInput {
     /**
      * @overload
      * @param {number} value
-     * @param {ScreenCSSUnit} cssUnit 
+     * @param {ViewportCSSUnit} cssUnit 
      */
     setFontScaling(value, cssUnit) {
         window.removeEventListener("resize", this._updateFontScale)

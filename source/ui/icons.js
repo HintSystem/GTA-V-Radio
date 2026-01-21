@@ -6,7 +6,7 @@
  * @prop {Object} [IconOptions.attrs]
  */
 
-/** @template {IconOptions & { variants: Object<string, IconOptions> }} T */
+/** @template {IconOptions & { variants?: Object<string, IconOptions> }} T */
 class Icon {
     /** @param {T} options  */
     constructor(options) {
@@ -20,9 +20,7 @@ class Icon {
      * @returns {Promise<string>}
      */
     async loadSvg(svgPath) {
-        if (this.svgCache.has(svgPath)) {
-            return this.svgCache.get(svgPath)
-        }
+        if (this.svgCache.has(svgPath)) return this.svgCache.get(svgPath)
 
         try {
             const response = await fetch(svgPath)
@@ -119,10 +117,10 @@ class Icon {
     /**
      * Convenience method to create a variant and insert into container
      * @param {HTMLElement} container 
-     * @param {keyof T['variants'] | null} variantName 
+     * @param {keyof T['variants']} [variantName=null]
      * @returns {Promise<SVGElement>}
      */
-    async insertVariant(container, variantName) {
+    async insertVariant(container, variantName = null) {
         const svgElement = await this.variant(variantName)
         container.appendChild(svgElement)
         return svgElement
@@ -140,11 +138,13 @@ class Icon {
 
     /**
      * Replaces an SVG element with a different variant if not already that variant
-     * @param {SVGElement} el - The current SVG element
+     * @param {SVGElement | Promise<SVGElement>} el - The current SVG element
      * @param {keyof T['variants'] | null} variantName - The variant to switch to
      * @returns {Promise<boolean>} - Returns true if updated, false if no change needed
      */
     async setVariant(el, variantName) {
+        el = await el
+        
         const currentVariant = this.getCurrentVariant(el)
         if (currentVariant === variantName) { return false }
 
@@ -197,4 +197,9 @@ export const Chevron = new Icon({
         up: { attrs: { style: "transform: rotate(270deg)" } },
         down: { attrs: { style: "transform: rotate(90deg)" } }
     }
+})
+
+export const Music = new Icon({
+    svgPath: "assets/icons/music.svg",
+    className: "music-icon"
 })

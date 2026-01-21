@@ -1,0 +1,32 @@
+.radioDisplay canvas {
+    position: absolute;
+    max-width: 100%;
+    width: 400px;
+    height: 6em;
+    margin: 0 auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    opacity: 0.4;
+}
+
+.radioDisplay div {
+    padding-left: 0.3em;
+    color: rgb(var(--ui-secondary-color));
+    opacity: 0.7;
+}
+
+.radioDisplay .station {
+    padding-top: 0.3em;
+    padding-bottom: 0.2em;
+    font-size: 1.2em;
+    opacity: 1;
+}
+
+.radioDisplay .icon {
+    position: absolute;
+    height: 4em;
+    right: 0;
+    top: 20%;
+    opacity: 0.5;
+}

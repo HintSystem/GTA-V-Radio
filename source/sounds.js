@@ -1,19 +1,19 @@
 import audio, { AudioManager, addStopAudioTracksListener } from "./audio.js"
 
 function randomPitchVariance(maxSemitones = 2) {
-    const semitoneShift = (Math.random() * 2 - 1) * maxSemitones;
-    return Math.pow(2, semitoneShift / 12);
+    const semitoneShift = (Math.random() * 2 - 1) * maxSemitones
+    return Math.pow(2, semitoneShift / 12)
 }
 
 function applyLowPassFilter(samples, cutoffFreq, sampleRate, poles = 1) {
-    const RC = 1.0 / (cutoffFreq * 2 * Math.PI);
-    const dt = 1.0 / sampleRate;
-    const alpha = dt / (RC + dt);
+    const RC = 1.0 / (cutoffFreq * 2 * Math.PI)
+    const dt = 1.0 / sampleRate
+    const alpha = dt / (RC + dt)
 
     for (let p = 0; p < poles; p++) {
-        let previous = 0;
+        let previous = 0
         for (let i = 0; i < samples.length; i++) {
-            samples[i] = previous = previous + (alpha * (samples[i] - previous));
+            samples[i] = previous = previous + (alpha * (samples[i] - previous))
         }
     }
 }
@@ -58,20 +58,20 @@ const RetuneSound = {
             const square = Math.sign(Math.sin(2 * Math.PI * frequency * time)) // Square wave
     
             // Exponential envelope
-            let envelope = 1;
+            let envelope = 1
             if (time < 0.03) {
-                envelope = Math.pow(time / 0.03, 1); // Attack
+                envelope = Math.pow(time / 0.03, 1) // Attack
             } else if (time < 0.0555) {
-                envelope = Math.pow(1 - ((time - 0.03) / 0.0255), 1); // Decay
+                envelope = Math.pow(1 - ((time - 0.03) / 0.0255), 1) // Decay
             } else {
-                envelope = 0;
+                envelope = 0
             }
     
-            data[i] = square * envelope * volume;
+            data[i] = square * envelope * volume
         }
 
         // Apply low-pass filtering to the buffer
-        applyLowPassFilter(data, 7800, sampleRate, 3); // 7800 Hz cutoff, 3 poles
+        applyLowPassFilter(data, 7800, sampleRate, 3) // 7800 Hz cutoff, 3 poles
         return buffer
     },
 

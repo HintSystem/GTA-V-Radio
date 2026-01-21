@@ -78,7 +78,7 @@ export class TabBar extends NavController {
             const tabWidth = `${tabWidthPercent.toFixed(4)}%`
 
             this.navBarEl.style.setProperty('--tab-width', tabWidth)
-        });
+        })
     }
 
     /** @private */

@@ -1,8 +1,8 @@
 import { logs } from "./debug/logging.js"
 import { pageIcon } from "./constants.js"
+import { mod, TypedEventEmitter } from "./utility.js"
 import { StationMeta, RadioStation, PlayableSegment } from "./radio.js"
 import audio, { MainTrack, preloadSegment, playSegment, stopAudioTracks } from "./audio.js"
-import { mod } from "./utility.js"
 import Sounds from "./sounds.js"
 
 const RETUNE_DELAY_MS = 100
@@ -16,6 +16,18 @@ export let stationIndex = null
 /** @type {StationMeta[]} */
 export let stationList = []
 
+/** @typedef {import("./types.js").TrackMarker} TrackMarker */
+
+/**
+ * @typedef {Object} EventMap
+ * @property {[index: number]} stationChanged
+ * @property {[marker?: TrackMarker]} trackMarkerChanged
+ */
+
+/** @type {TypedEventEmitter<EventMap>} */
+const eventEmitter = new TypedEventEmitter()
+export default eventEmitter
+
 const defaultTitle = document.title
 function resetRadioMeta() {
     document.title = defaultTitle
@@ -23,6 +35,63 @@ function resetRadioMeta() {
 
     if ('mediaSession' in navigator) {
         navigator.mediaSession.metadata = new MediaMetadata({ title: defaultTitle, artwork: [{ src: pageIcon.element.href }] })
+    }
+}
+
+/**
+ * @param {TrackMarker} trackMarker
+ * @returns {string?}
+ */
+function getTrackMarkerLabel(trackMarker) {
+    if (trackMarker === null) return null
+
+    if (trackMarker.title && trackMarker.artist) {
+        return `${trackMarker.title} - ${trackMarker.artist}`
+    }
+    return trackMarker.title || trackMarker.artist
+}
+
+/** @param {TrackMarker} trackMarker */
+function updateMediaMeta(trackMarker = null) {
+    /** @type {MediaMetadataInit} */
+    let mediaMeta = {}
+
+    if (station === null) {
+        pageIcon.reset()
+
+        mediaMeta = { title: defaultTitle, artwork: [{ src: pageIcon.element.href }] }
+    } else {
+        pageIcon.element.href = station.getPrefferedIcon("color")
+        pageIcon.element.type = "image/svg+xml"
+
+        const coverArt = station.getIcon("cover")
+        const artwork = coverArt ? [ { src: coverArt, sizes: "512x512", type: "image/png" } ] : []
+
+        mediaMeta = { title: station.meta.info.title, artist: station.meta.info.dj, artwork }
+    }
+
+    eventEmitter.emit("trackMarkerChanged", trackMarker)
+
+    const trackLabel = getTrackMarkerLabel(trackMarker)
+    if (trackLabel != null) {
+        mediaMeta.artist = trackLabel
+        logs.logTitleChange(trackMarker)
+    }
+
+    document.title = mediaMeta.title
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata(mediaMeta)
+    }
+}
+
+/** @param {MediaMetadataInit} meta */
+function setMediaMeta(meta) {
+    document.title = meta.title
+    pageIcon.element.href = station.getPrefferedIcon("color")
+    pageIcon.element.type = "image/svg+xml"
+
+    if ('mediaSession' in navigator) {
+        navigator.mediaSession.metadata = new MediaMetadata(meta)
     }
 }
 
@@ -34,19 +103,6 @@ function getStationMediaMeta() {
     return { title: station.meta.info.title, artist: station.meta.info.dj, artwork }
 }
 
-/** @param {MediaMetadataInit} meta */
-function setMediaMeta(meta = null) {
-    if (!meta) meta = getStationMediaMeta()
-    
-    document.title = meta.title
-    pageIcon.element.href = station.getPrefferedIcon("color")
-    pageIcon.element.type = "image/svg+xml"
-
-    if ('mediaSession' in navigator) {
-        navigator.mediaSession.metadata = new MediaMetadata(meta)
-    }
-}
-
 if ('mediaSession' in navigator) {
     navigator.mediaSession.setActionHandler("play", syncToStation)
     navigator.mediaSession.setActionHandler("pause", stopAudioTracks)
@@ -56,19 +112,22 @@ if ('mediaSession' in navigator) {
     navigator.mediaSession.setPositionState({ duration: 0, position: 0, playbackRate: 1 })
 }
 
-/** @param {import("./types.js").TrackMarker} trackMarker  */
-function setTrackTitle(trackMarker) {
+/** @param {TrackMarker} trackMarker  */
+function onTrackMarker(trackMarker) {
     const stationMeta = getStationMediaMeta()
 
     if (trackMarker.title || trackMarker.artist) {
         if (trackMarker.title && trackMarker.artist) {
-            stationMeta.artist = `${trackMarker.title} - ${trackMarker.artist}`;
+            stationMeta.artist = `${trackMarker.title} - ${trackMarker.artist}`
         } else {
-            stationMeta.artist = trackMarker.title || trackMarker.artist;
+            stationMeta.artist = trackMarker.title || trackMarker.artist
         }
     }
 
     setMediaMeta(stationMeta)
+    eventEmitter.emit("trackMarkerChanged", trackMarker)
+
+    logs.logTitleChange(trackMarker)
 }
 
 let retuneTimeout = null
@@ -92,16 +151,13 @@ function retuneOnBuffer() {
 /** @param {PlayableSegment} segment */
 function queueTitleChangeEvents(segment) {
     const trackMarkers = segment.info?.markers?.track
-    if (!trackMarkers || trackMarkers.length == 0) { setMediaMeta(); return }
+    if (!trackMarkers || trackMarkers.length == 0) { updateMediaMeta(); return }
 
     const { index: lastMarker } = segment.getActiveTrackMarker()
 
     for (let i = lastMarker; i < trackMarkers.length; i++) {
         const marker = trackMarkers[i]
-        MainTrack.setTimeout(() => {
-            setTrackTitle(marker)
-            logs.logTitleChange(marker)
-        }, marker.offset / 1000, true)
+        MainTrack.setTimeout(() => updateMediaMeta(marker), marker.offset / 1000, true)
     }
 }
 
@@ -131,7 +187,6 @@ function preloadNextSegment() {
 export function syncToStation() {
     stopAudioTracks()
     audio.context.resume()
-    setMediaMeta()
     
     Sounds.RETUNE.positioned()
     Sounds.RETUNE.start()
@@ -167,15 +222,16 @@ export async function setStation(index) {
     stationIndex = index
 
     const callbacks = stationListeners[index] || []
-    callbacks.forEach((callback) => { callback() })
+    callbacks.forEach((callback) => callback())
 
-    if (index === null) {
-        stopAudioTracks()
-        resetRadioMeta()
-    } else {
-        station = await stationList[index].createStation()
-        syncToStation()
-    }
+    if (index !== null) { station = await stationList[index].createStation() }
+    else { station = null }
+
+    updateMediaMeta()
+
+    eventEmitter.emit("stationChanged", index)
+
+    if (index === null) { stopAudioTracks() } else { syncToStation() }
 }
 
 /**

@@ -31,6 +31,55 @@ export function mod(n, m) { return ((n % m) + m) % m }
 /** @param {any} n */
 export function isNumeric(n) { return !isNaN(parseFloat(n)) && isFinite(n) }
 
+/**
+ * @template {Record<string, any[]>} TEventMap
+ */
+export class TypedEventEmitter {
+    constructor() {
+        /** @type {{ [K in keyof TEventMap]?: Array<(...args: TEventMap[K]) => void> }} */
+        this.listeners = {}
+    }
+
+    /**
+     * @template {keyof TEventMap} K
+     * @param {K} event
+     * @param {(...args: TEventMap[K]) => void} callback
+     */
+    on(event, callback) {
+        if (!this.listeners[event]) {
+            this.listeners[event] = []
+        }
+        this.listeners[event].push(callback)
+    }
+
+    /**
+     * @template {keyof TEventMap} K
+     * @param {K} event
+     * @param {(...args: TEventMap[K]) => void} callback
+     */
+    off(event, callback) {
+        const list = this.listeners[event];
+        if (list) {
+            this.listeners[event] = list.filter((cb) => cb !== callback)
+        }
+    }
+
+    /**
+     * @template {keyof TEventMap} K
+     * @param {K} event
+     * @param {TEventMap[K]} args
+     */
+    emit(event, ...args) {
+        const list = this.listeners[event]
+        if (list) {
+            for (const cb of list) {
+                cb(...args)
+            }
+        }
+    }
+}
+
+
 export class SeededPRNG {
     /** @param {number} seed */
     constructor(seed) {
@@ -72,9 +121,9 @@ export class SeededPRNG {
 
     /** Returns a cloned copy of the instance */
     clone() {
-        const cloned = new SeededPRNG(this.seed);
-        cloned.index = this.index;
-        return cloned;
+        const cloned = new SeededPRNG(this.seed)
+        cloned.index = this.index
+        return cloned
     }
 }
 
@@ -115,11 +164,11 @@ class IndexDrawPool {
 
     /** Returns a cloned copy of the instance */
     clone() {
-        const cloned = new IndexDrawPool(0, this.dontRepeatFor);
-        cloned.draw = [...this.draw];
-        cloned.discard = [...this.discard];
+        const cloned = new IndexDrawPool(0, this.dontRepeatFor)
+        cloned.draw = [...this.draw]
+        cloned.discard = [...this.discard]
 
-        return cloned;
+        return cloned
     }
 }
 
@@ -150,10 +199,10 @@ export class IndexDrawPoolManager {
 
     /** Returns a cloned copy of the instance */
     clone() {
-        const cloned = new IndexDrawPoolManager();
+        const cloned = new IndexDrawPoolManager()
         for (const [id, pool] of this.map.entries()) {
-            cloned.map.set(id, pool.clone());
+            cloned.map.set(id, pool.clone())
         }
-        return cloned;
+        return cloned
     }
 }
